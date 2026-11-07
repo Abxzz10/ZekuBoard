@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.media.AudioManager
 import android.os.Build
@@ -108,7 +109,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    // Font hanya untuk tulisan di tombol; teks yang diketik ke aplikasi tidak terpengaruh.
+    private val keyTypeface: Typeface = loadKeyTypeface(context)
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = keyTypeface
+    }
     private val icons = HashMap<Int, Drawable?>()
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -484,6 +490,17 @@ class ZekuKeyboardView(context: Context) : View(context) {
         audioManager?.playSoundEffect(effect, -1f)
     }
 
+    /**
+     * Muat AlteHaasGroteskBold dari assets/fonts. Kalau file font belum ada,
+     * pakai bold bawaan sistem supaya keyboard tetap jalan.
+     */
+    private fun loadKeyTypeface(context: Context): Typeface =
+        try {
+            Typeface.createFromAsset(context.assets, FONT_PATH)
+        } catch (e: Exception) {
+            Typeface.DEFAULT_BOLD
+        }
+
     @Suppress("DEPRECATION")
     private fun createVibrator(context: Context): Vibrator? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -499,5 +516,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val REPEAT_INTERVAL_MS = 45L
         const val DOUBLE_TAP_MS = 350L
         const val VIBRATE_MS = 18L
+        const val FONT_PATH = "fonts/AlteHaasGroteskBold.ttf"
     }
 }
