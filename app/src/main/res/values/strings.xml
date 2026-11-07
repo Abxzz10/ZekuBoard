@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZekuBoard</string>
+    <string name="title_theme">Tema</string>
+    <string name="title_settings">Pengaturan</string>
+
+    <string name="nav_home">Beranda</string>
+    <string name="cd_back">Kembali</string>
+    <string name="cd_settings">Pengaturan</string>
+
+    <string name="sub_home">Aktifkan keyboard dalam dua langkah.</string>
+    <string name="status_title">Status keyboard</string>
+    <string name="status_off_desc">Belum aktif di HP kamu</string>
+    <string name="status_not_selected_desc">Aktif, tapi belum jadi keyboard utama</string>
+    <string name="status_on_desc">ZekuBoard siap dipakai</string>
+    <string name="pill_off">Nonaktif</string>
+    <string name="pill_not_selected">Belum dipilih</string>
+    <string name="pill_on">Aktif</string>
+
+    <string name="step1_title">1. Aktifkan ZekuBoard</string>
+    <string name="step1_desc">Nyalakan di pengaturan HP</string>
+    <string name="step2_title">2. Pilih sebagai keyboard</string>
+    <string name="step2_desc">Jadikan keyboard utama</string>
+    <string name="btn_open">Buka</string>
+    <string name="btn_choose">Pilih</string>
+    <string name="btn_done">Selesai</string>
+
+    <string name="test_title">Coba ketik</string>
+    <string name="test_hint">Ketik sesuatu di sini</string>
+
+    <string name="sub_theme">Tampilan hitam putih, mengikuti pilihanmu.</string>
+    <string name="theme_dark">Gelap</string>
+    <string name="theme_dark_desc">Latar hitam, teks putih</string>
+    <string name="theme_light">Terang</string>
+    <string name="theme_light_desc">Latar putih, teks hitam</string>
+    <string name="theme_system">Ikut sistem</string>
+    <string name="theme_system_desc">Menyesuaikan pengaturan HP</string>
+    <string name="preview_title">Pratinjau</string>
+    <string name="theme_active">Tema aktif: %1$s</string>
+
+    <string name="sub_settings">Atur rasa mengetik sesuai kebiasaanmu.</string>
+    <string name="vibrate_title">Getar saat mengetik</string>
+    <string name="vibrate_desc">Umpan balik tiap tombol</string>
+    <string name="sound_title">Suara tombol</string>
+    <string name="sound_desc">Bunyi klik saat mengetik</string>
+    <string name="height_title">Tinggi keyboard</string>
+    <string name="height_fmt">%1$d%%</string>
+    <string name="about_title">Tentang ZekuBoard</string>
+    <string name="version_fmt">Versi %1$s</string>
+</resources>

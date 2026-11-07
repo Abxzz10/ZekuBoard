@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0E0E0E</color>
+    <color name="fg">#F2F2F2</color>
+    <color name="muted">#9A9A9A</color>
+    <color name="card">#1A1A1A</color>
+    <color name="line">#333333</color>
+    <color name="nav_active">#3A3A3A</color>
+    <color name="inv">#F2F2F2</color>
+    <color name="on_inv">#0E0E0E</color>
+</resources>

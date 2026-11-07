@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.ZekuBoard" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/inv</item>
+        <item name="colorOnPrimary">@color/on_inv</item>
+        <item name="colorPrimaryContainer">@color/card</item>
+        <item name="colorOnPrimaryContainer">@color/inv</item>
+        <item name="colorSurface">@color/bg</item>
+        <item name="colorOnSurface">@color/fg</item>
+        <item name="colorSurfaceVariant">@color/card</item>
+        <item name="colorOnSurfaceVariant">@color/muted</item>
+        <item name="colorSurfaceContainerHighest">@color/card</item>
+        <item name="colorOutline">@color/muted</item>
+        <item name="colorOutlineVariant">@color/line</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:textColorPrimary">@color/fg</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+
+</resources>

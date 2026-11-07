@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="ZekuHeaderTitle">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/fg</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="ZekuSub">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/muted</item>
+    </style>
+
+    <style name="ZekuTitle">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/fg</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="ZekuDesc">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/muted</item>
+    </style>
+
+    <style name="ZekuCard">
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:paddingHorizontal">18dp</item>
+        <item name="android:paddingVertical">14dp</item>
+    </style>
+
+    <style name="ZekuBtn">
+        <item name="android:background">@drawable/bg_btn</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/on_inv</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingHorizontal">16dp</item>
+        <item name="android:paddingVertical">8dp</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="ZekuPill">
+        <item name="android:background">@drawable/bg_pill</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/muted</item>
+        <item name="android:paddingHorizontal">10dp</item>
+        <item name="android:paddingVertical">2dp</item>
+    </style>
+
+    <style name="ZekuCircleButton">
+        <item name="android:background">@drawable/bg_circle</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:tint">@color/fg</item>
+    </style>
+
+</resources>
