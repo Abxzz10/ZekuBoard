@@ -1,8 +1,8 @@
 # ZekuBoard
 
-Aplikasi keyboard Android (Kotlin). Tahap ini baru bagian aplikasinya:
-Beranda, Tema (Gelap / Terang / Ikut sistem), dan Pengaturan.
-Keyboard (QWERTY) dan fitur translate menyusul di tahap berikutnya.
+Aplikasi keyboard Android (Kotlin). Tahap ini: aplikasi (Beranda, Tema, Pengaturan)
+dan keyboard QWERTY hitam putih (huruf, simbol, portrait + landscape).
+Fitur translate dan fitur tambahan keyboard menyusul di tahap berikutnya.
 
 - Package: `com.zeku.keyboard`
 - minSdk 26 (Android 8.0), targetSdk 34
@@ -31,9 +31,18 @@ tempel isi file `build.yml` dari proyek ini.
 
 Build bisa dijalankan ulang kapan saja lewat **Actions → Build APK → Run workflow**.
 
+## Mengaktifkan keyboard
+
+Buka aplikasi ZekuBoard → Beranda → ikuti dua langkah (aktifkan, lalu pilih
+sebagai keyboard). Pengaturan getar, suara, tinggi keyboard, dan tema langsung
+dipakai keyboard saat kolom teks dibuka lagi.
+
 ## Struktur singkat
 
 - `app/src/main/java/com/zeku/keyboard/` — kode Kotlin
-  (`MainActivity`, `SettingsActivity`, `Prefs`, `ZekuApp`, `SystemBars`)
-- `app/src/main/res/` — layout, tema, warna, ikon
+  - Aplikasi: `MainActivity`, `SettingsActivity`, `Prefs`, `ZekuApp`, `SystemBars`
+  - Keyboard: `ZekuIME` (layanan keyboard), `ZekuKeyboardView` (tampilan + sentuhan),
+    `KeyboardLayouts` (tata letak huruf dan simbol)
+- `app/src/main/res/` — layout, tema, warna, ikon (`ic_kb_*` = ikon tombol keyboard)
+- `app/src/main/res/xml/method.xml` — konfigurasi keyboard (input method)
 - `.github/workflows/build.yml` — build APK otomatis
