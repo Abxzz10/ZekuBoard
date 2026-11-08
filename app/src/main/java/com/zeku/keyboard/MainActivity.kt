@@ -13,6 +13,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import com.google.android.material.materialswitch.MaterialSwitch
 
 class MainActivity : AppCompatActivity() {
 
@@ -22,6 +23,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvTitle: TextView
     private lateinit var screenHome: View
     private lateinit var screenTheme: View
+    private lateinit var screenShortcut: View
 
     private lateinit var navPill: View
     private lateinit var navHome: View
@@ -30,6 +32,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navTheme: View
     private lateinit var navThemeIcon: ImageView
     private lateinit var navThemeLabel: TextView
+    private lateinit var navShortcut: View
+    private lateinit var navShortcutIcon: ImageView
+    private lateinit var navShortcutLabel: TextView
 
     private lateinit var statusDesc: TextView
     private lateinit var statusPill: TextView
@@ -40,6 +45,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var optLight: View
     private lateinit var optSystem: View
     private lateinit var themeStatus: TextView
+
+    private lateinit var swGestureSpace: MaterialSwitch
+    private lateinit var swGestureSelect: MaterialSwitch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         tvTitle = findViewById(R.id.tvTitle)
         screenHome = findViewById(R.id.screenHome)
         screenTheme = findViewById(R.id.screenTheme)
+        screenShortcut = findViewById(R.id.screenShortcut)
 
         navPill = findViewById(R.id.navPill)
         navHome = findViewById(R.id.navHome)
@@ -77,6 +86,9 @@ class MainActivity : AppCompatActivity() {
         navTheme = findViewById(R.id.navTheme)
         navThemeIcon = findViewById(R.id.navThemeIcon)
         navThemeLabel = findViewById(R.id.navThemeLabel)
+        navShortcut = findViewById(R.id.navShortcut)
+        navShortcutIcon = findViewById(R.id.navShortcutIcon)
+        navShortcutLabel = findViewById(R.id.navShortcutLabel)
 
         statusDesc = findViewById(R.id.statusDesc)
         statusPill = findViewById(R.id.statusPill)
@@ -87,6 +99,9 @@ class MainActivity : AppCompatActivity() {
         optLight = findViewById(R.id.optLight)
         optSystem = findViewById(R.id.optSystem)
         themeStatus = findViewById(R.id.themeStatus)
+
+        swGestureSpace = findViewById(R.id.swGestureSpace)
+        swGestureSelect = findViewById(R.id.swGestureSelect)
     }
 
     private fun setupListeners() {
@@ -96,6 +111,7 @@ class MainActivity : AppCompatActivity() {
 
         navHome.setOnClickListener { selectTab(TAB_HOME, true) }
         navTheme.setOnClickListener { selectTab(TAB_THEME, true) }
+        navShortcut.setOnClickListener { selectTab(TAB_SHORTCUT, true) }
 
         btnStep1.setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -108,6 +124,11 @@ class MainActivity : AppCompatActivity() {
         optDark.setOnClickListener { chooseTheme(Prefs.THEME_DARK) }
         optLight.setOnClickListener { chooseTheme(Prefs.THEME_LIGHT) }
         optSystem.setOnClickListener { chooseTheme(Prefs.THEME_SYSTEM) }
+
+        swGestureSpace.isChecked = prefs.gestureSpace
+        swGestureSpace.setOnCheckedChangeListener { _, checked -> prefs.gestureSpace = checked }
+        swGestureSelect.isChecked = prefs.gestureSelect
+        swGestureSelect.setOnCheckedChangeListener { _, checked -> prefs.gestureSelect = checked }
     }
 
     // ---------------------------------------------------------------- Navigasi
@@ -119,12 +140,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         val home = tab == TAB_HOME
+        val theme = tab == TAB_THEME
+        val shortcut = tab == TAB_SHORTCUT
         screenHome.visibility = if (home) View.VISIBLE else View.GONE
-        screenTheme.visibility = if (home) View.GONE else View.VISIBLE
-        tvTitle.setText(if (home) R.string.app_name else R.string.title_theme)
+        screenTheme.visibility = if (theme) View.VISIBLE else View.GONE
+        screenShortcut.visibility = if (shortcut) View.VISIBLE else View.GONE
+        tvTitle.setText(
+            when (tab) {
+                TAB_THEME -> R.string.title_theme
+                TAB_SHORTCUT -> R.string.title_shortcut
+                else -> R.string.app_name
+            }
+        )
 
         styleNavItem(navHome, navHomeIcon, navHomeLabel, home)
-        styleNavItem(navTheme, navThemeIcon, navThemeLabel, !home)
+        styleNavItem(navTheme, navThemeIcon, navThemeLabel, theme)
+        styleNavItem(navShortcut, navShortcutIcon, navShortcutLabel, shortcut)
     }
 
     private fun styleNavItem(item: View, icon: ImageView, label: TextView, active: Boolean) {
@@ -214,6 +245,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAB_HOME = 0
         private const val TAB_THEME = 1
+        private const val TAB_SHORTCUT = 2
         private const val STATE_TAB = "state_tab"
     }
 }

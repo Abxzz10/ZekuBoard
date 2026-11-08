@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">ZekuBoard</string>
     <string name="title_theme">Tema</string>
+    <string name="title_shortcut">Shortcut</string>
     <string name="title_settings">Pengaturan</string>
 
     <string name="nav_home">Beranda</string>
@@ -37,6 +38,12 @@
     <string name="theme_system_desc">Menyesuaikan pengaturan HP</string>
     <string name="preview_title">Pratinjau</string>
     <string name="theme_active">Tema aktif: %1$s</string>
+
+    <string name="sub_shortcut">Nyalakan atau matikan gestur keyboard.</string>
+    <string name="gesture_space_title">Geser spasi untuk kursor</string>
+    <string name="gesture_space_desc">Tahan spasi, lalu geser kiri atau kanan</string>
+    <string name="gesture_select_title">Shift + hapus untuk blok</string>
+    <string name="gesture_select_desc">Tahan Shift dan hapus, geser untuk memblok, lepas hapus untuk menghapus blok</string>
 
     <string name="sub_settings">Atur rasa mengetik sesuai kebiasaanmu.</string>
     <string name="vibrate_title">Getar saat mengetik</string>

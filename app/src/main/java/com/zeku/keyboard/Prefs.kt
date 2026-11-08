@@ -35,6 +35,20 @@ class Prefs(context: Context) {
             sp.edit().putInt(KEY_HEIGHT, value).apply()
         }
 
+    /** Gestur geser di tombol spasi untuk memindah kursor. */
+    var gestureSpace: Boolean
+        get() = sp.getBoolean(KEY_GESTURE_SPACE, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_GESTURE_SPACE, value).apply()
+        }
+
+    /** Gestur Shift + hapus untuk memblok lalu menghapus teks. */
+    var gestureSelect: Boolean
+        get() = sp.getBoolean(KEY_GESTURE_SELECT, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_GESTURE_SELECT, value).apply()
+        }
+
     /** Mode gelap/terang AndroidX sesuai pilihan tema. */
     fun nightMode(): Int = when (theme) {
         THEME_DARK -> AppCompatDelegate.MODE_NIGHT_YES
@@ -52,5 +66,7 @@ class Prefs(context: Context) {
         private const val KEY_VIBRATE = "vibrate"
         private const val KEY_SOUND = "sound"
         private const val KEY_HEIGHT = "height_percent"
+        private const val KEY_GESTURE_SPACE = "gesture_space"
+        private const val KEY_GESTURE_SELECT = "gesture_select"
     }
 }

@@ -19,6 +19,7 @@ import android.util.SparseArray
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.ContextCompat
+import kotlin.math.abs
 import kotlin.math.max
 
 enum class ShiftState { OFF, ONCE, LOCK }
@@ -62,7 +63,8 @@ private class Palette(
 /**
  * Tampilan keyboard yang digambar sendiri (Canvas).
  * Menangani sentuhan (multi-touch), shift, ganti layar huruf/simbol,
- * hapus berulang, pratinjau huruf, getar, dan suara.
+ * hapus berulang, pratinjau huruf, getar, suara, serta dua gestur:
+ * geser spasi (pindah kursor) dan Shift + hapus (blok lalu hapus).
  */
 class ZekuKeyboardView(context: Context) : View(context) {
 
@@ -70,6 +72,21 @@ class ZekuKeyboardView(context: Context) : View(context) {
         fun onKeyText(text: String)
         fun onKeyDelete()
         fun onKeyEnter()
+
+        /** Pindah kursor [steps] karakter (negatif = kiri, positif = kanan). */
+        fun onCursorMove(steps: Int)
+
+        /** Mulai seleksi dari posisi kursor. Mengembalikan false bila tidak didukung. */
+        fun onSelectBegin(): Boolean
+
+        /** Ubah seleksi: [chars] negatif = ke kiri dari titik awal, positif = ke kanan. */
+        fun onSelectChange(chars: Int)
+
+        /** Hapus teks yang sedang terseleksi. */
+        fun onSelectCommit()
+
+        /** Batalkan seleksi tanpa menghapus, kursor kembali ke titik awal. */
+        fun onSelectCancel()
     }
 
     var listener: Listener? = null
@@ -92,6 +109,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var heightScale = 1f
     private var vibrateOn = true
     private var soundOn = false
+    private var gestureSpaceOn = true
+    private var gestureSelectOn = true
 
     private var rowHeight = 0f
     private var topPad = 0f
@@ -106,6 +125,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var previewBox: KeyBox? = null
     private var previewPointer = -1
     private var lastShiftTap = 0L
+
+    // Status gestur geser spasi (pindah kursor).
+    private var spaceId = -1
+    private var spaceStartX = 0f
+    private var spaceApplied = 0
+    private var spaceActive = false
+
+    // Status gestur Shift + hapus (blok lalu hapus).
+    private var selDeleteId = -1
+    private var selShiftId = -1
+    private var selStartX = 0f
+    private var selLast = 0
+    private var selActive = false
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -134,10 +166,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     // ------------------------------------------------------------ API publik
 
-    /** Baca ulang pengaturan (tema, tinggi, getar, suara) dari [Prefs]. */
+    /** Baca ulang pengaturan (tema, tinggi, getar, suara, gestur) dari [Prefs]. */
     fun applyPrefs() {
         vibrateOn = prefs.vibrate
         soundOn = prefs.sound
+        gestureSpaceOn = prefs.gestureSpace
+        gestureSelectOn = prefs.gestureSelect
         heightScale = prefs.heightPercent.coerceIn(80, 120) / 100f
         isDarkTheme = when (prefs.theme) {
             Prefs.THEME_DARK -> true
@@ -377,10 +411,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
         pointers.put(id, box)
         feedback(box.key.type)
         if (box.key.type == KeyType.DELETE) {
-            listener?.onKeyDelete()
-            repeatHandler.removeCallbacks(repeatRunnable)
-            repeatHandler.postDelayed(repeatRunnable, REPEAT_DELAY_MS)
+            // Shift + hapus = gestur seleksi; selain itu hapus biasa.
+            if (!startSelectGesture(id, x)) {
+                listener?.onKeyDelete()
+                repeatHandler.removeCallbacks(repeatRunnable)
+                repeatHandler.postDelayed(repeatRunnable, REPEAT_DELAY_MS)
+            }
         } else {
+            if (box.key.type == KeyType.SPACE && gestureSpaceOn) {
+                spaceId = id
+                spaceStartX = x
+                spaceApplied = 0
+                spaceActive = false
+            }
             previewBox = if (canPreview(box)) box else null
             previewPointer = id
         }
@@ -388,6 +431,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleMove(id: Int, x: Float, y: Float) {
+        if (id == spaceId) {
+            moveSpace(x)
+            return
+        }
+        if (id == selDeleteId) {
+            moveSelect(x)
+            return
+        }
         val current = pointers.get(id) ?: return
         if (current.key.type != KeyType.CHARACTER) return
         val next = findBox(x, y) ?: return
@@ -406,16 +457,43 @@ class ZekuKeyboardView(context: Context) : View(context) {
             previewBox = null
             previewPointer = -1
         }
-        if (box.key.type == KeyType.DELETE) {
-            repeatHandler.removeCallbacks(repeatRunnable)
-        } else {
-            perform(box.key)
+
+        when {
+            id == spaceId -> {
+                val moved = spaceActive
+                resetSpaceGesture()
+                // Hanya diketuk tanpa geser: masukkan satu spasi seperti biasa.
+                if (!moved) perform(box.key)
+            }
+            id == selDeleteId -> {
+                // Jari hapus dilepas: hapus blok hanya bila Shift masih ditahan.
+                val shiftStillHeld = selShiftId >= 0 && pointers.indexOfKey(selShiftId) >= 0
+                val commit = selActive && shiftStillHeld
+                val cancel = selActive && !shiftStillHeld
+                selDeleteId = -1
+                selActive = false
+                selLast = 0
+                if (commit) listener?.onSelectCommit()
+                if (cancel) listener?.onSelectCancel()
+            }
+            id == selShiftId -> {
+                // Shift dilepas: batalkan seleksi, jangan hapus, dan jangan ubah status shift.
+                selShiftId = -1
+                cancelSelection()
+            }
+            box.key.type == KeyType.DELETE -> repeatHandler.removeCallbacks(repeatRunnable)
+            else -> perform(box.key)
         }
         invalidate()
     }
 
     private fun cancelTouches() {
         repeatHandler.removeCallbacks(repeatRunnable)
+        cancelSelection()
+        resetSpaceGesture()
+        selDeleteId = -1
+        selShiftId = -1
+        selLast = 0
         pointers.clear()
         previewBox = null
         previewPointer = -1
@@ -432,6 +510,73 @@ class ZekuKeyboardView(context: Context) : View(context) {
             cancelTouches()
             invalidate()
         }
+    }
+
+    // ------------------------------------------------------------ Gestur spasi
+
+    private fun moveSpace(x: Float) {
+        val dx = x - spaceStartX
+        if (!spaceActive) {
+            if (abs(dx) < dp(SPACE_ACTIVATE_DP)) return
+            spaceActive = true
+        }
+        val steps = (dx / dp(SPACE_STEP_DP)).toInt()
+        val delta = steps - spaceApplied
+        if (delta != 0) {
+            spaceApplied = steps
+            listener?.onCursorMove(delta)
+        }
+    }
+
+    private fun resetSpaceGesture() {
+        spaceId = -1
+        spaceStartX = 0f
+        spaceApplied = 0
+        spaceActive = false
+    }
+
+    // ------------------------------------------------------ Gestur Shift + hapus
+
+    /** ID jari yang sedang menahan tombol Shift, atau -1 bila tidak ada. */
+    private fun findHeldShiftId(): Int {
+        for (i in 0 until pointers.size()) {
+            if (pointers.valueAt(i).key.type == KeyType.SHIFT) return pointers.keyAt(i)
+        }
+        return -1
+    }
+
+    /** Mulai gestur seleksi bila syaratnya terpenuhi. True = sentuhan ini dipakai gestur. */
+    private fun startSelectGesture(id: Int, x: Float): Boolean {
+        if (!gestureSelectOn || currentLayout != LayoutMode.LETTERS) return false
+        // Sudah ada gestur berjalan: jari hapus tambahan diabaikan, bukan dihapus biasa.
+        if (selDeleteId >= 0) return true
+        val shiftId = findHeldShiftId()
+        if (shiftId < 0) return false
+
+        repeatHandler.removeCallbacks(repeatRunnable)
+        selDeleteId = id
+        selShiftId = shiftId
+        selStartX = x
+        selLast = 0
+        selActive = listener?.onSelectBegin() ?: false
+        return true
+    }
+
+    private fun moveSelect(x: Float) {
+        if (!selActive) return
+        val chars = ((x - selStartX) / dp(SELECT_STEP_DP)).toInt()
+        if (chars != selLast) {
+            selLast = chars
+            listener?.onSelectChange(chars)
+        }
+    }
+
+    private fun cancelSelection() {
+        if (selActive) {
+            selActive = false
+            listener?.onSelectCancel()
+        }
+        selLast = 0
     }
 
     // ------------------------------------------------------------------- Aksi
@@ -517,5 +662,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val DOUBLE_TAP_MS = 350L
         const val VIBRATE_MS = 18L
         const val FONT_PATH = "fonts/AlteHaasGroteskBold.ttf"
+
+        // Gestur: jarak geser (dp) sebelum dianggap geseran, dan jarak per karakter.
+        const val SPACE_ACTIVATE_DP = 16f
+        const val SPACE_STEP_DP = 12f
+        const val SELECT_STEP_DP = 10f
     }
 }
