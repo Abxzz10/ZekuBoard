@@ -170,7 +170,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var lpId = -1
     private var lpBox: KeyBox? = null
     private val longFired = SparseBooleanArray()
-    private val lpRunnable = Runnable { fireLongPress() }
+    private val lpRunnable = Runnable { fireAltPress() }
 
     private val repeatRunnable = object : Runnable {
         override fun run() {
@@ -473,7 +473,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
             }
             previewBox = if (canPreview(box)) box else null
             previewPointer = id
-            if (box.key.type == KeyType.CHARACTER) scheduleLongPress(id, box)
+            if (box.key.type == KeyType.CHARACTER) scheduleAltPress(id, box)
         }
         invalidate()
     }
@@ -494,7 +494,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val next = findBox(x, y) ?: return
         if (next === current || next.key.type != KeyType.CHARACTER) return
         pointers.put(id, next)
-        if (lpId == id) cancelLongPress()
+        if (lpId == id) cancelAltPress()
         if (previewPointer == id) {
             previewBox = if (canPreview(next)) next else null
         }
@@ -504,7 +504,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun handleUp(id: Int) {
         val box = pointers.get(id) ?: return
         pointers.remove(id)
-        if (lpId == id) cancelLongPress()
+        if (lpId == id) cancelAltPress()
         val fired = longFired.get(id)
         if (fired) longFired.delete(id)
         if (previewPointer == id) {
@@ -550,7 +550,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         selDeleteId = -1
         selShiftId = -1
         selLast = 0
-        cancelLongPress()
+        cancelAltPress()
         longFired.clear()
         pointers.clear()
         previewBox = null
@@ -583,21 +583,21 @@ class ZekuKeyboardView(context: Context) : View(context) {
         return null
     }
 
-    private fun scheduleLongPress(id: Int, box: KeyBox) {
-        cancelLongPress()
+    private fun scheduleAltPress(id: Int, box: KeyBox) {
+        cancelAltPress()
         if (alternateFor(box.key) == null) return
         lpId = id
         lpBox = box
         repeatHandler.postDelayed(lpRunnable, longPressDelay)
     }
 
-    private fun cancelLongPress() {
+    private fun cancelAltPress() {
         repeatHandler.removeCallbacks(lpRunnable)
         lpId = -1
         lpBox = null
     }
 
-    private fun fireLongPress() {
+    private fun fireAltPress() {
         val id = lpId
         val box = lpBox
         lpId = -1
