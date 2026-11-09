@@ -21,10 +21,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Diekspor supaya bisa dibuka dari tombol pengaturan di daftar keyboard sistem -->
         <activity
             android:name=".SettingsActivity"
             android:exported="true" />
+
+        <!-- Diekspor supaya bisa dibuka dari tombol pengaturan di daftar keyboard sistem -->
+        <activity
+            android:name=".PreferencesActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".ZekuIME"

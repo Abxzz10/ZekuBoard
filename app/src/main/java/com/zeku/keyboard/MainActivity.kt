@@ -13,7 +13,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
-import com.google.android.material.materialswitch.MaterialSwitch
 
 class MainActivity : AppCompatActivity() {
 
@@ -40,14 +39,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusPill: TextView
     private lateinit var btnStep1: TextView
     private lateinit var btnStep2: TextView
+    private lateinit var cardPrefs: View
 
     private lateinit var optDark: View
     private lateinit var optLight: View
     private lateinit var optSystem: View
     private lateinit var themeStatus: TextView
-
-    private lateinit var swGestureSpace: MaterialSwitch
-    private lateinit var swGestureSelect: MaterialSwitch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,14 +91,12 @@ class MainActivity : AppCompatActivity() {
         statusPill = findViewById(R.id.statusPill)
         btnStep1 = findViewById(R.id.btnStep1)
         btnStep2 = findViewById(R.id.btnStep2)
+        cardPrefs = findViewById(R.id.cardPrefs)
 
         optDark = findViewById(R.id.optDark)
         optLight = findViewById(R.id.optLight)
         optSystem = findViewById(R.id.optSystem)
         themeStatus = findViewById(R.id.themeStatus)
-
-        swGestureSpace = findViewById(R.id.swGestureSpace)
-        swGestureSelect = findViewById(R.id.swGestureSelect)
     }
 
     private fun setupListeners() {
@@ -120,15 +115,13 @@ class MainActivity : AppCompatActivity() {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showInputMethodPicker()
         }
+        cardPrefs.setOnClickListener {
+            startActivity(Intent(this, PreferencesActivity::class.java))
+        }
 
         optDark.setOnClickListener { chooseTheme(Prefs.THEME_DARK) }
         optLight.setOnClickListener { chooseTheme(Prefs.THEME_LIGHT) }
         optSystem.setOnClickListener { chooseTheme(Prefs.THEME_SYSTEM) }
-
-        swGestureSpace.isChecked = prefs.gestureSpace
-        swGestureSpace.setOnCheckedChangeListener { _, checked -> prefs.gestureSpace = checked }
-        swGestureSelect.isChecked = prefs.gestureSelect
-        swGestureSelect.setOnCheckedChangeListener { _, checked -> prefs.gestureSelect = checked }
     }
 
     // ---------------------------------------------------------------- Navigasi

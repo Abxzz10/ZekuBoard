@@ -16,6 +16,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.SparseArray
+import android.util.SparseBooleanArray
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.ContextCompat
@@ -111,14 +112,29 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var soundOn = false
     private var gestureSpaceOn = true
     private var gestureSelectOn = true
+    private var longPressNumbersOn = true
+    private var longPressSymbolsOn = true
+    private var longPressDelay = Prefs.LP_DELAY_DEFAULT.toLong()
+
+    // Pilihan tombol di layar huruf (dari Preferences Typing).
+    private var numberRowOn = true
+    private var commaOn = true
+    private var periodOn = true
+
+    /** Baris tombol untuk layar yang sedang tampil. */
+    private var rows: List<List<Key>> = emptyList()
 
     private var rowHeight = 0f
     private var topPad = 0f
+    private var topExtra = 0f
     private var bottomPad = 0f
     private var sidePad = 0f
     private var hInset = 0f
     private var vInset = 0f
     private var radius = 0f
+
+    private val topTotal: Float
+        get() = topPad + topExtra
 
     private val boxes = ArrayList<KeyBox>()
     private val pointers = SparseArray<KeyBox>()
@@ -150,6 +166,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private val icons = HashMap<Int, Drawable?>()
 
     private val repeatHandler = Handler(Looper.getMainLooper())
+    // Tekan lama huruf: jari yang sedang ditunggu dan tombolnya.
+    private var lpId = -1
+    private var lpBox: KeyBox? = null
+    private val longFired = SparseBooleanArray()
+    private val lpRunnable = Runnable { fireLongPress() }
+
     private val repeatRunnable = object : Runnable {
         override fun run() {
             listener?.onKeyDelete()
@@ -166,12 +188,18 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     // ------------------------------------------------------------ API publik
 
-    /** Baca ulang pengaturan (tema, tinggi, getar, suara, gestur) dari [Prefs]. */
+    /** Baca ulang pengaturan (tema, tinggi, tombol, getar, suara, gestur) dari [Prefs]. */
     fun applyPrefs() {
         vibrateOn = prefs.vibrate
         soundOn = prefs.sound
         gestureSpaceOn = prefs.gestureSpace
         gestureSelectOn = prefs.gestureSelect
+        longPressNumbersOn = prefs.longPressNumbers
+        longPressSymbolsOn = prefs.longPressSymbols
+        longPressDelay = prefs.longPressDelay.toLong()
+        numberRowOn = prefs.numberRow
+        commaOn = prefs.commaKey
+        periodOn = prefs.periodKey
         heightScale = prefs.heightPercent.coerceIn(80, 120) / 100f
         isDarkTheme = when (prefs.theme) {
             Prefs.THEME_DARK -> true
@@ -180,6 +208,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
                 Configuration.UI_MODE_NIGHT_YES
         }
         palette = if (isDarkTheme) Palette.DARK else Palette.LIGHT
+        rebuildRows()
         updateMetrics()
         requestLayout()
         buildBoxes()
@@ -189,6 +218,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     fun showLayout(mode: LayoutMode) {
         if (mode == currentLayout) return
         currentLayout = mode
+        rebuildRows()
+        updateMetrics()
+        // Jumlah baris bisa berbeda antara layar huruf dan simbol (tanpa baris angka).
+        requestLayout()
         buildBoxes()
         invalidate()
     }
@@ -209,6 +242,13 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
+    private fun rebuildRows() {
+        rows = KeyboardLayouts.get(
+            currentLayout,
+            LayoutOptions(numberRowOn, commaOn, periodOn)
+        )
+    }
+
     private fun updateMetrics() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         rowHeight = dp(if (landscape) 38f else 50f) * heightScale
@@ -218,12 +258,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
         hInset = dp(3f)
         vInset = dp(if (landscape) 3f else 4f)
         radius = dp(10f)
+
+        // Tanpa baris angka, baris huruf paling atas butuh ruang di atasnya untuk gelembung pratinjau.
+        val roomNeeded = if (!numberRowOn && currentLayout == LayoutMode.LETTERS) {
+            rowHeight + dp(2f) - (topPad + vInset)
+        } else {
+            0f
+        }
+        topExtra = max(0f, roomNeeded)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         updateMetrics()
-        val rows = KeyboardLayouts.get(currentLayout).size
-        val h = (rowHeight * rows + topPad + bottomPad).toInt()
+        val h = (rowHeight * rows.size + topTotal + bottomPad).toInt()
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), h)
     }
 
@@ -235,16 +282,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun buildBoxes() {
         cancelTouches()
         boxes.clear()
-        if (width <= 0 || height <= 0) return
+        if (width <= 0 || height <= 0 || rows.isEmpty()) return
 
-        val rows = KeyboardLayouts.get(currentLayout)
-        val rowH = (height - topPad - bottomPad) / rows.size
+        val rowH = (height - topTotal - bottomPad) / rows.size
 
         rows.forEachIndexed { r, row ->
             val total = row.sumOf { it.weight.toDouble() }.toFloat()
             val unit = (width - 2 * sidePad) / total
-            val top = topPad + r * rowH
-            val bottom = topPad + (r + 1) * rowH
+            val top = topTotal + r * rowH
+            val bottom = topTotal + (r + 1) * rowH
             var x = sidePad
             val rowBoxes = ArrayList<KeyBox>()
 
@@ -311,7 +357,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun drawPreview(canvas: Canvas, box: KeyBox) {
         val face = box.face
         val pw = max(face.width() * 1.3f, dp(48f))
-        val left = (face.centerX() - pw / 2f).coerceIn(dp(2f), width - pw - dp(2f))
+        val maxLeft = max(dp(2f), width - pw - dp(2f))
+        val left = (face.centerX() - pw / 2f).coerceIn(dp(2f), maxLeft)
         val bottom = face.top - dp(2f)
         val rect = RectF(left, bottom - rowHeight, left + pw, bottom)
 
@@ -415,7 +462,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
             if (!startSelectGesture(id, x)) {
                 listener?.onKeyDelete()
                 repeatHandler.removeCallbacks(repeatRunnable)
-                repeatHandler.postDelayed(repeatRunnable, REPEAT_DELAY_MS)
+                repeatHandler.postDelayed(repeatRunnable, longPressDelay)
             }
         } else {
             if (box.key.type == KeyType.SPACE && gestureSpaceOn) {
@@ -426,6 +473,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
             }
             previewBox = if (canPreview(box)) box else null
             previewPointer = id
+            if (box.key.type == KeyType.CHARACTER) scheduleLongPress(id, box)
         }
         invalidate()
     }
@@ -439,11 +487,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
             moveSelect(x)
             return
         }
+        // Karakter tekan lama sudah dimasukkan: geseran berikutnya diabaikan.
+        if (longFired.get(id)) return
         val current = pointers.get(id) ?: return
         if (current.key.type != KeyType.CHARACTER) return
         val next = findBox(x, y) ?: return
         if (next === current || next.key.type != KeyType.CHARACTER) return
         pointers.put(id, next)
+        if (lpId == id) cancelLongPress()
         if (previewPointer == id) {
             previewBox = if (canPreview(next)) next else null
         }
@@ -453,12 +504,17 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun handleUp(id: Int) {
         val box = pointers.get(id) ?: return
         pointers.remove(id)
+        if (lpId == id) cancelLongPress()
+        val fired = longFired.get(id)
+        if (fired) longFired.delete(id)
         if (previewPointer == id) {
             previewBox = null
             previewPointer = -1
         }
 
         when {
+            // Karakter alternatif sudah dimasukkan saat ditekan lama: tidak mengetik lagi.
+            fired -> Unit
             id == spaceId -> {
                 val moved = spaceActive
                 resetSpaceGesture()
@@ -494,6 +550,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
         selDeleteId = -1
         selShiftId = -1
         selLast = 0
+        cancelLongPress()
+        longFired.clear()
         pointers.clear()
         previewBox = null
         previewPointer = -1
@@ -510,6 +568,51 @@ class ZekuKeyboardView(context: Context) : View(context) {
             cancelTouches()
             invalidate()
         }
+    }
+
+    // ------------------------------------------------- Karakter tekan lama
+
+    /** Karakter tekan lama (Q-P jadi angka, huruf lain jadi simbol); null bila tidak ada atau dimatikan. */
+    private fun alternateFor(key: Key): String? {
+        if (currentLayout != LayoutMode.LETTERS || key.type != KeyType.CHARACTER) return null
+        val c = key.label.singleOrNull() ?: return null
+        val number = KeyAlternates.NUMBER[c]
+        if (number != null) return if (longPressNumbersOn) number else null
+        val symbol = KeyAlternates.SYMBOL[c]
+        if (symbol != null) return if (longPressSymbolsOn) symbol else null
+        return null
+    }
+
+    private fun scheduleLongPress(id: Int, box: KeyBox) {
+        cancelLongPress()
+        if (alternateFor(box.key) == null) return
+        lpId = id
+        lpBox = box
+        repeatHandler.postDelayed(lpRunnable, longPressDelay)
+    }
+
+    private fun cancelLongPress() {
+        repeatHandler.removeCallbacks(lpRunnable)
+        lpId = -1
+        lpBox = null
+    }
+
+    private fun fireLongPress() {
+        val id = lpId
+        val box = lpBox
+        lpId = -1
+        lpBox = null
+        if (box == null || id < 0) return
+        // Jari sudah pindah atau lepas: tidak ada yang dimasukkan.
+        if (pointers.get(id) !== box) return
+        val alt = alternateFor(box.key) ?: return
+
+        longFired.put(id, true)
+        if (vibrateOn) vibrate()
+        if (shiftState == ShiftState.ONCE) shiftState = ShiftState.OFF
+        listener?.onKeyText(alt)
+        if (previewPointer == id) previewBox = null
+        invalidate()
     }
 
     // ------------------------------------------------------------ Gestur spasi
@@ -657,7 +760,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private companion object {
-        const val REPEAT_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 45L
         const val DOUBLE_TAP_MS = 350L
         const val VIBRATE_MS = 18L

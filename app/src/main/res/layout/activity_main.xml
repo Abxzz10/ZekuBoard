@@ -39,7 +39,7 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <!-- Layar Beranda -->
+        <!-- Layar Beranda: A (status + langkah), B (fitur), C (coba ketik) -->
         <ScrollView
             android:id="@+id/screenHome"
             android:layout_width="match_parent"
@@ -63,7 +63,7 @@
                     android:layout_marginBottom="14dp"
                     android:text="@string/sub_home" />
 
-                <!-- Status keyboard -->
+                <!-- A. Status keyboard -->
                 <LinearLayout
                     style="@style/ZekuCard"
                     android:layout_width="match_parent"
@@ -102,7 +102,7 @@
                         android:text="@string/pill_off" />
                 </LinearLayout>
 
-                <!-- Langkah 1 -->
+                <!-- A. Langkah 1 -->
                 <LinearLayout
                     style="@style/ZekuCard"
                     android:layout_width="match_parent"
@@ -140,12 +140,11 @@
                         android:text="@string/btn_open" />
                 </LinearLayout>
 
-                <!-- Langkah 2 -->
+                <!-- A. Langkah 2 -->
                 <LinearLayout
                     style="@style/ZekuCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="10dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -178,7 +177,63 @@
                         android:text="@string/btn_choose" />
                 </LinearLayout>
 
-                <!-- Coba ketik -->
+                <!-- Garis pembatas A | B -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:layout_marginVertical="18dp"
+                    android:background="@color/line" />
+
+                <!-- B. Preferences Typing (kartu fitur lain menyusul di bawahnya) -->
+                <LinearLayout
+                    android:id="@+id/cardPrefs"
+                    style="@style/ZekuCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/ZekuTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/pref_card_title" />
+
+                        <TextView
+                            style="@style/ZekuDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/pref_card_desc" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="12dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_chevron_right"
+                        android:tint="@color/muted" />
+                </LinearLayout>
+
+                <!-- Garis pembatas B | C -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:layout_marginVertical="18dp"
+                    android:background="@color/line" />
+
+                <!-- C. Coba ketik -->
                 <LinearLayout
                     style="@style/ZekuCard"
                     android:layout_width="match_parent"
@@ -398,7 +453,7 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- Layar Shortcut -->
+        <!-- Layar Shortcut: dikosongkan (gestur pindah ke Preferences Typing) -->
         <ScrollView
             android:id="@+id/screenShortcut"
             android:layout_width="match_parent"
@@ -422,79 +477,6 @@
                     android:layout_marginStart="4dp"
                     android:layout_marginBottom="14dp"
                     android:text="@string/sub_shortcut" />
-
-                <!-- Geser spasi untuk kursor -->
-                <LinearLayout
-                    style="@style/ZekuCard"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="10dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            style="@style/ZekuTitle"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/gesture_space_title" />
-
-                        <TextView
-                            style="@style/ZekuDesc"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/gesture_space_desc" />
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/swGestureSpace"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
-                        android:contentDescription="@string/gesture_space_title" />
-                </LinearLayout>
-
-                <!-- Shift + hapus untuk blok -->
-                <LinearLayout
-                    style="@style/ZekuCard"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            style="@style/ZekuTitle"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/gesture_select_title" />
-
-                        <TextView
-                            style="@style/ZekuDesc"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/gesture_select_desc" />
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/swGestureSelect"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
-                        android:contentDescription="@string/gesture_select_title" />
-                </LinearLayout>
             </LinearLayout>
         </ScrollView>
     </FrameLayout>

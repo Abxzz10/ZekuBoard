@@ -4,6 +4,7 @@
     <string name="title_theme">Tema</string>
     <string name="title_shortcut">Shortcut</string>
     <string name="title_settings">Pengaturan</string>
+    <string name="title_preferences">Preferences Typing</string>
 
     <string name="nav_home">Beranda</string>
     <string name="cd_back">Kembali</string>
@@ -26,6 +27,9 @@
     <string name="btn_choose">Pilih</string>
     <string name="btn_done">Selesai</string>
 
+    <string name="pref_card_title">Preferences Typing</string>
+    <string name="pref_card_desc">Atur tombol, tampilan, pintasan, getar, dan suara</string>
+
     <string name="test_title">Coba ketik</string>
     <string name="test_hint">Ketik sesuatu di sini</string>
 
@@ -39,19 +43,91 @@
     <string name="preview_title">Pratinjau</string>
     <string name="theme_active">Tema aktif: %1$s</string>
 
-    <string name="sub_shortcut">Nyalakan atau matikan gestur keyboard.</string>
+    <string name="sub_shortcut">Singkatan teks akan hadir di sini nanti.</string>
+
+    <string name="sub_settings">Pengaturan mengetik ada di Preferences Typing, di Beranda.</string>
+    <string name="about_title">Tentang ZekuBoard</string>
+    <string name="version_fmt">Versi %1$s</string>
+
+    <!-- Halaman Preferences Typing -->
+    <string name="sub_preferences">Atur cara mengetik. Perubahan langsung dipakai keyboard.</string>
+    <string name="percent_fmt">%1$d%%</string>
+    <string name="ms_fmt">%1$d ms</string>
+
+    <string name="sec_keys">Tombol</string>
+    <string name="sec_long_press">Tekan lama</string>
+    <string name="sec_display">Tampilan</string>
+    <string name="sec_shortcuts">Pintasan</string>
+    <string name="sec_feedback">Pengetuk tombol</string>
+
+    <string name="pref_number_row_title">Baris angka</string>
+    <string name="pref_number_row_desc">Tampilkan angka 1 sampai 0 di atas huruf</string>
+    <string name="pref_number_symbols_title">Simbol di baris angka</string>
+    <string name="pref_number_symbols_desc">Tekan lama angka untuk memasukkan simbol, misalnya 1 menjadi !</string>
+    <string name="pref_comma_title">Tombol koma</string>
+    <string name="pref_comma_desc">Tampilkan di layar huruf. Di layar simbol tetap ada.</string>
+    <string name="pref_period_title">Tombol titik</string>
+    <string name="pref_period_desc">Tampilkan di layar huruf. Di layar simbol tetap ada.</string>
+    <string name="pref_lp_numbers_title">Tekan lama untuk angka</string>
+    <string name="pref_lp_numbers_desc">Tekan lama huruf Q sampai P untuk memasukkan angka</string>
+    <string name="pref_lp_symbols_title">Tekan lama untuk simbol</string>
+    <string name="pref_lp_symbols_desc">Tekan lama huruf lain untuk memasukkan simbol, misalnya A menjadi @</string>
+
+    <string name="pref_font_title">Ukuran font</string>
+    <string name="pref_font_desc">Ukuran tulisan di tombol</string>
+    <string name="height_title">Tinggi keyboard</string>
+    <string name="height_fmt">%1$d%%</string>
+    <string name="pref_height_desc">Tinggi seluruh baris tombol</string>
+    <string name="pref_width_title">Lebar keyboard</string>
+    <string name="pref_width_desc">Persempit keyboard dan letakkan di tengah. Tidak berlaku saat mode satu tangan aktif.</string>
+    <string name="pref_onehand_title">Keyboard satu tangan</string>
+    <string name="pref_onehand_desc">Persempit keyboard ke satu sisi layar</string>
+    <string name="onehand_off">Nonaktif</string>
+    <string name="onehand_off_desc">Keyboard selebar layar</string>
+    <string name="onehand_left">Kiri</string>
+    <string name="onehand_left_desc">Keyboard di sisi kiri, tombol pindah sisi dan ukuran normal di kanan</string>
+    <string name="onehand_right">Kanan</string>
+    <string name="onehand_right_desc">Keyboard di sisi kanan, tombol pindah sisi dan ukuran normal di kiri</string>
+
+    <string name="pref_autocap_title">Huruf kapital otomatis</string>
+    <string name="pref_autocap_desc">Huruf besar di awal kalimat, sesuai permintaan kolom teks</string>
+    <string name="pref_sentence_title">Kapital setelah akhir kalimat</string>
+    <string name="pref_sentence_desc">Huruf besar setelah titik, tanda tanya, tanda seru, atau baris baru. Butuh huruf kapital otomatis.</string>
+    <string name="pref_double_space_title">Titik dengan spasi ganda</string>
+    <string name="pref_double_space_desc">Ketuk spasi dua kali untuk memasukkan titik dan spasi</string>
+    <string name="pref_auto_space_title">Spasi otomatis setelah tanda baca</string>
+    <string name="pref_auto_space_desc">Tambah spasi setelah koma, tanda seru, dan tanda tanya. Titik hanya sebelum huruf kapital.</string>
     <string name="gesture_space_title">Geser spasi untuk kursor</string>
     <string name="gesture_space_desc">Tahan spasi, lalu geser kiri atau kanan</string>
     <string name="gesture_select_title">Shift + hapus untuk blok</string>
     <string name="gesture_select_desc">Tahan Shift dan hapus, geser untuk memblok, lepas hapus untuk menghapus blok</string>
 
-    <string name="sub_settings">Atur rasa mengetik sesuai kebiasaanmu.</string>
+    <string name="pref_preview_title">Pratinjau karakter</string>
+    <string name="pref_preview_desc">Gelembung huruf di atas tombol yang ditekan</string>
+    <string name="pref_popup_title">Pop-up tombol</string>
+    <string name="pref_popup_desc">Tombol mengecil sebentar saat ditekan</string>
     <string name="vibrate_title">Getar saat mengetik</string>
     <string name="vibrate_desc">Umpan balik tiap tombol</string>
+    <string name="pref_vibrate_strength_title">Kekuatan getar</string>
+    <string name="pref_vibrate_strength_desc">Lepas slider untuk merasakan getarnya</string>
     <string name="sound_title">Suara tombol</string>
-    <string name="sound_desc">Bunyi klik saat mengetik</string>
-    <string name="height_title">Tinggi keyboard</string>
-    <string name="height_fmt">%1$d%%</string>
-    <string name="about_title">Tentang ZekuBoard</string>
-    <string name="version_fmt">Versi %1$s</string>
+    <string name="sound_desc">Bunyi klik saat mengetik. Mengikuti suara sentuh di pengaturan HP.</string>
+    <string name="pref_volume_title">Volume suara tombol</string>
+    <string name="pref_volume_desc">Lepas slider untuk mendengar bunyinya</string>
+    <string name="pref_lp_delay_title">Durasi tekan lama</string>
+    <string name="pref_lp_delay_desc">Berlaku untuk tekan lama huruf dan hapus berulang</string>
+
+    <string name="prefs_test_hint">Ketik di sini untuk mencoba perubahan</string>
+
+    <string name="restore_title">Pulihkan pengaturan bawaan</string>
+    <string name="restore_desc">Kembalikan semua pengaturan mengetik ke awal. Tema tidak berubah.</string>
+    <string name="restore_button">Pulihkan</string>
+    <string name="restore_confirm_title">Pulihkan pengaturan bawaan?</string>
+    <string name="restore_confirm_message">Semua pengaturan di halaman ini kembali ke nilai awal.</string>
+    <string name="restore_confirm_yes">Pulihkan</string>
+    <string name="restore_confirm_no">Batal</string>
+    <string name="restore_done">Pengaturan dipulihkan</string>
+
+    <string name="soon_title">Segera hadir</string>
+    <string name="soon_desc">Suggestion strip, prediksi kata, autocorrect, saran emoji, riwayat clipboard, dan swipe typing menyusul di tahap berikutnya.</string>
 </resources>
