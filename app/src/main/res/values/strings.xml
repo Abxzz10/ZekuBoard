@@ -69,9 +69,9 @@
     <string name="pref_period_title">Tombol titik</string>
     <string name="pref_period_desc">Tampilkan di layar huruf. Di layar simbol tetap ada.</string>
     <string name="pref_lp_numbers_title">Tekan lama untuk angka</string>
-    <string name="pref_lp_numbers_desc">Tekan lama huruf Q sampai P untuk memasukkan angka</string>
+    <string name="pref_lp_numbers_desc">Saat baris angka dimatikan, tekan lama huruf Q sampai P memasukkan angka 1 sampai 0</string>
     <string name="pref_lp_symbols_title">Tekan lama untuk simbol</string>
-    <string name="pref_lp_symbols_desc">Tekan lama huruf lain untuk memasukkan simbol, misalnya A menjadi @</string>
+    <string name="pref_lp_symbols_desc">Tekan lama huruf memasukkan simbol sesuai letaknya di layar 123. Simbolnya tampil kecil di tombol</string>
 
     <string name="pref_font_title">Ukuran font</string>
     <string name="pref_font_desc">Ukuran tulisan di tombol</string>

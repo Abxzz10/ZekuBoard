@@ -68,6 +68,11 @@ object KeyboardLayouts {
         return row
     }
 
+    /** Tiga baris simbol layar 123 (simbol 1). Dipakai juga sebagai simbol tekan lama di layar huruf. */
+    const val SYMBOL_ROW_1 = "@#\$_&-+()/"
+    const val SYMBOL_ROW_2 = "%=^[]{}<>"
+    const val SYMBOL_ROW_3 = "*\"':;!?"
+
     private val NUMBERS: List<Key> = chars("1234567890")
 
     private fun letters(options: LayoutOptions): List<List<Key>> {
@@ -91,9 +96,9 @@ object KeyboardLayouts {
 
     private val SYMBOLS_1: List<List<Key>> = listOf(
         NUMBERS,
-        chars("@#\$_&-+()/"),
-        listOf(spacer()) + chars("%=^[]{}<>") + spacer(),
-        listOf(Key("=\\<", KeyType.TO_SYMBOLS_2, 1.5f)) + chars("*\"':;!?") + Key("", KeyType.DELETE, 1.5f),
+        chars(SYMBOL_ROW_1),
+        listOf(spacer()) + chars(SYMBOL_ROW_2) + spacer(),
+        listOf(Key("=\\<", KeyType.TO_SYMBOLS_2, 1.5f)) + chars(SYMBOL_ROW_3) + Key("", KeyType.DELETE, 1.5f),
         bottomRow(Key("ABC", KeyType.TO_LETTERS, 1.5f))
     )
 
@@ -107,8 +112,9 @@ object KeyboardLayouts {
 }
 
 /**
- * Karakter alternatif untuk tekan lama di layar huruf (mengikuti pola keyboard umum):
- * huruf Q-P menjadi angka, huruf lain menjadi simbol.
+ * Karakter alternatif untuk tekan lama di layar huruf. Simbol mengikuti letak tombol di layar 123
+ * (simbol 1): baris q-p sejajar dengan baris simbol pertama, a-l dengan baris kedua, z-m dengan baris ketiga.
+ * Angka (q-p menjadi 1-0) dipakai bila baris angka dimatikan.
  */
 object KeyAlternates {
 
@@ -117,10 +123,18 @@ object KeyAlternates {
         'y' to "6", 'u' to "7", 'i' to "8", 'o' to "9", 'p' to "0"
     )
 
-    val SYMBOL: Map<Char, String> = mapOf(
-        'a' to "@", 's' to "#", 'd' to "\$", 'f' to "_", 'g' to "&",
-        'h' to "-", 'j' to "+", 'k' to "(", 'l' to ")",
-        'z' to "*", 'x' to "\"", 'c' to "'", 'v' to ":", 'b' to ";",
-        'n' to "!", 'm' to "?"
-    )
+    val SYMBOL: Map<Char, String> = buildSymbols()
+
+    private fun buildSymbols(): Map<Char, String> {
+        val map = HashMap<Char, String>()
+        fun add(letters: String, symbols: String) {
+            for (i in letters.indices) {
+                if (i < symbols.length) map[letters[i]] = symbols[i].toString()
+            }
+        }
+        add("qwertyuiop", KeyboardLayouts.SYMBOL_ROW_1)
+        add("asdfghjkl", KeyboardLayouts.SYMBOL_ROW_2)
+        add("zxcvbnm", KeyboardLayouts.SYMBOL_ROW_3)
+        return map
+    }
 }

@@ -163,6 +163,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
         textAlign = Paint.Align.CENTER
         typeface = keyTypeface
     }
+    // Simbol kecil di pojok kanan atas tombol (petunjuk tekan lama).
+    private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.RIGHT
+        typeface = keyTypeface
+    }
     private val icons = HashMap<Int, Drawable?>()
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -259,13 +264,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
         vInset = dp(if (landscape) 3f else 4f)
         radius = dp(10f)
 
-        // Tanpa baris angka, baris huruf paling atas butuh ruang di atasnya untuk gelembung pratinjau.
-        val roomNeeded = if (!numberRowOn && currentLayout == LayoutMode.LETTERS) {
-            rowHeight + dp(2f) - (topPad + vInset)
-        } else {
-            0f
-        }
-        topExtra = max(0f, roomNeeded)
+        // Tanpa baris angka, keyboard cukup lebih pendek: tidak ada ruang kosong di atas.
+        // Baris huruf paling atas tidak punya ruang untuk gelembung pratinjau (canPreview = false).
+        topExtra = 0f
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -337,7 +338,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
         canvas.drawRoundRect(face, radius, radius, fillPaint)
 
         when (key.type) {
-            KeyType.CHARACTER -> drawLabel(canvas, face, displayLabel(key), rowHeight * 0.42f)
+            KeyType.CHARACTER -> {
+                drawLabel(canvas, face, displayLabel(key), rowHeight * 0.42f)
+                alternateFor(key)?.let { drawHint(canvas, face, it) }
+            }
             KeyType.TO_SYMBOLS, KeyType.TO_SYMBOLS_2, KeyType.TO_LETTERS ->
                 drawLabel(canvas, face, key.label, rowHeight * 0.32f)
             KeyType.SHIFT -> drawIcon(
@@ -368,6 +372,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
         strokePaint.strokeWidth = dp(1f)
         canvas.drawRoundRect(rect, radius, radius, strokePaint)
         drawLabel(canvas, rect, displayLabel(box.key), rowHeight * 0.6f)
+    }
+
+    private fun drawHint(canvas: Canvas, face: RectF, text: String) {
+        hintPaint.textSize = rowHeight * 0.22f
+        hintPaint.color = palette.text
+        hintPaint.alpha = 150
+        val x = face.right - dp(5f)
+        val y = face.top + dp(4f) - hintPaint.ascent()
+        canvas.drawText(text, x, y, hintPaint)
     }
 
     private fun drawLabel(canvas: Canvas, rect: RectF, text: String, size: Float) {
@@ -576,11 +589,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun alternateFor(key: Key): String? {
         if (currentLayout != LayoutMode.LETTERS || key.type != KeyType.CHARACTER) return null
         val c = key.label.singleOrNull() ?: return null
+        // Baris angka dimatikan: Q sampai P memberi angka. Selain itu simbol sesuai letak di layar 123.
         val number = KeyAlternates.NUMBER[c]
-        if (number != null) return if (longPressNumbersOn) number else null
-        val symbol = KeyAlternates.SYMBOL[c]
-        if (symbol != null) return if (longPressSymbolsOn) symbol else null
-        return null
+        if (number != null && !numberRowOn && longPressNumbersOn) return number
+        return if (longPressSymbolsOn) KeyAlternates.SYMBOL[c] else null
     }
 
     private fun scheduleAltPress(id: Int, box: KeyBox) {
