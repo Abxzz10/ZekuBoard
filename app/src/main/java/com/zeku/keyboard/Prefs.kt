@@ -109,11 +109,6 @@ class Prefs(context: Context) {
             editor.apply()
         }
 
-    /** Tekan lama huruf lain memasukkan simbol (A menjadi @, dan seterusnya). */
-    var longPressSymbols: Boolean
-        get() = readBool(KEY_LP_SYMBOLS, true)
-        set(value) = writeBool(KEY_LP_SYMBOLS, value)
-
     // ----------------------------------------------------------------- Tampilan
 
     var fontPercent: Int
@@ -124,12 +119,15 @@ class Prefs(context: Context) {
         get() = readInt(KEY_HEIGHT, HEIGHT_DEFAULT, HEIGHT_MIN, HEIGHT_MAX)
         set(value) = writeInt(KEY_HEIGHT, value, HEIGHT_MIN, HEIGHT_MAX)
 
-    /** Ruang Tools keyboard di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
+    /** Bilah Tools keyboard di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
     var toolsBar: Boolean
         get() = readBool(KEY_TOOLS_BAR, true)
         set(value) = writeBool(KEY_TOOLS_BAR, value)
 
-    /** Ruang kolom saran kata di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
+    /**
+     * Kolom saran kata di atas tombol (isinya menyusul). Menambah tinggi keyboard.
+     * Bila menyala bersama [toolsBar], keduanya bergantian di bilah yang sama.
+     */
     var suggestionBar: Boolean
         get() = readBool(KEY_SUGGESTION_BAR, true)
         set(value) = writeBool(KEY_SUGGESTION_BAR, value)
@@ -282,7 +280,6 @@ class Prefs(context: Context) {
         private const val KEY_COMMA = "comma_key"
         private const val KEY_PERIOD = "period_key"
         private const val KEY_LP_NUMBERS = "long_press_numbers"
-        private const val KEY_LP_SYMBOLS = "long_press_symbols"
         private const val KEY_FONT = "font_percent"
         private const val KEY_WIDTH = "width_percent"
         /** Publik: halaman Preferences Typing memantau kunci ini (tombol satu tangan di keyboard). */
@@ -303,7 +300,7 @@ class Prefs(context: Context) {
         private val TYPING_KEYS = listOf(
             KEY_VIBRATE, KEY_SOUND, KEY_HEIGHT, KEY_GESTURE_SPACE, KEY_GESTURE_SELECT,
             KEY_NUMBER_ROW, KEY_NUMBER_ROW_SYMBOLS, KEY_COMMA, KEY_PERIOD,
-            KEY_LP_NUMBERS, KEY_LP_SYMBOLS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
+            KEY_LP_NUMBERS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
             KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR

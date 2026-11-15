@@ -56,6 +56,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         if (!restarting) {
             view.showLayout(startLayoutFor(info?.inputType ?: InputType.TYPE_NULL))
             view.applyShift(ShiftState.OFF)
+            view.resetTopBar()
         }
         refreshAutoShift()
         applyNavigationBar()

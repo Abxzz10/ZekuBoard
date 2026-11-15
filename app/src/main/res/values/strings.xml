@@ -59,9 +59,9 @@
     <string name="sec_display">Tampilan</string>
     <string name="sec_top_bars">Bilah atas</string>
     <string name="pref_tools_title">Tools keyboard</string>
-    <string name="pref_tools_desc">Sediakan ruang bilah alat di atas tombol. Isinya menyusul.</string>
+    <string name="pref_tools_desc">Bilah alat di atas tombol. Tampil saat kolom teks dibuka dan setelah spasi dua kali. Isinya menyusul.</string>
     <string name="pref_suggest_title">Kolom saran kata</string>
-    <string name="pref_suggest_desc">Sediakan ruang saran kata di atas tombol. Isinya menyusul.</string>
+    <string name="pref_suggest_desc">Saran kata di atas tombol. Tampil setelah mulai mengetik. Bila Tools juga menyala, keduanya bergantian di bilah yang sama. Isinya menyusul.</string>
     <string name="sec_shortcuts">Pintasan</string>
     <string name="sec_feedback">Pengetuk tombol</string>
 
@@ -75,8 +75,6 @@
     <string name="pref_period_desc">Tampilkan di layar huruf. Di layar simbol tetap ada.</string>
     <string name="pref_lp_numbers_title">Tekan lama untuk angka</string>
     <string name="pref_lp_numbers_desc">Tekan lama huruf Q sampai P memasukkan angka 1 sampai 0. Tidak bisa menyala bersamaan dengan Baris angka.</string>
-    <string name="pref_lp_symbols_title">Tekan lama untuk simbol</string>
-    <string name="pref_lp_symbols_desc">Tekan lama huruf memasukkan simbol sesuai letaknya di layar 123. Simbolnya tampil kecil di tombol</string>
 
     <string name="pref_font_title">Ukuran font</string>
     <string name="pref_font_desc">Ukuran tulisan di tombol</string>
@@ -120,7 +118,7 @@
     <string name="pref_volume_title">Volume suara tombol</string>
     <string name="pref_volume_desc">Lepas slider untuk mendengar bunyinya</string>
     <string name="pref_lp_delay_title">Durasi tekan lama</string>
-    <string name="pref_lp_delay_desc">Berlaku untuk tekan lama huruf dan hapus berulang</string>
+    <string name="pref_lp_delay_desc">Berlaku untuk tekan lama angka dan hapus berulang</string>
 
     <string name="prefs_test_hint">Ketik di sini untuk mencoba perubahan</string>
 

@@ -78,10 +78,6 @@ class PreferencesActivity : AppCompatActivity() {
                 if (it) swNumberRow?.isChecked = false
             }
         )
-        addSwitch(
-            longPress, R.string.pref_lp_symbols_title, R.string.pref_lp_symbols_desc,
-            { prefs.longPressSymbols }, { prefs.longPressSymbols = it }
-        )
         addSlider(
             longPress, R.string.pref_lp_delay_title, R.string.pref_lp_delay_desc,
             Prefs.LP_DELAY_MIN, Prefs.LP_DELAY_MAX, Prefs.LP_DELAY_STEP,

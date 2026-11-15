@@ -25,6 +25,9 @@ import kotlin.math.max
 
 enum class ShiftState { OFF, ONCE, LOCK }
 
+/** Isi bilah atas bila Tools keyboard dan kolom saran kata sama-sama menyala. */
+enum class TopBarMode { TOOLS, SUGGEST }
+
 /** Jenis aksi pada tombol enter, menentukan ikonnya. */
 enum class EnterKind { ENTER, SEARCH, SEND, NEXT, DONE }
 
@@ -113,7 +116,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var gestureSpaceOn = true
     private var gestureSelectOn = true
     private var longPressNumbersOn = true
-    private var longPressSymbolsOn = true
     private var longPressDelay = Prefs.LP_DELAY_DEFAULT.toLong()
 
     // Pilihan tombol di layar huruf (dari Preferences Typing).
@@ -121,11 +123,13 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var commaOn = true
     private var periodOn = true
 
-    // Ruang di atas tombol untuk Tools keyboard dan kolom saran kata (isinya menyusul).
+    // Bilah atas: satu ruang untuk Tools keyboard dan kolom saran kata (isinya menyusul).
+    // Bila keduanya menyala, Tools tampil dulu, mengetik beralih ke saran, spasi dua kali kembali ke Tools.
     private var toolsOn = true
     private var suggestOn = true
-    private var toolsH = 0f
-    private var suggestH = 0f
+    private var barH = 0f
+    private var topMode = TopBarMode.TOOLS
+    private var spaceRun = 0
 
     /** Baris tombol untuk layar yang sedang tampil. */
     private var rows: List<List<Key>> = emptyList()
@@ -206,7 +210,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         gestureSpaceOn = prefs.gestureSpace
         gestureSelectOn = prefs.gestureSelect
         longPressNumbersOn = prefs.longPressNumbers
-        longPressSymbolsOn = prefs.longPressSymbols
         longPressDelay = prefs.longPressDelay.toLong()
         numberRowOn = prefs.numberRow
         commaOn = prefs.commaKey
@@ -251,6 +254,32 @@ class ZekuKeyboardView(context: Context) : View(context) {
         invalidate()
     }
 
+    /** Bilah atas kembali menampilkan Tools (dipanggil saat kolom teks baru dibuka). */
+    fun resetTopBar() {
+        spaceRun = 0
+        setTopMode(TopBarMode.TOOLS)
+    }
+
+    private fun setTopMode(mode: TopBarMode) {
+        if (topMode == mode) return
+        topMode = mode
+        invalidate()
+    }
+
+    /**
+     * Catat teks yang baru diketik untuk menentukan isi bilah atas: karakter selain spasi
+     * beralih ke kolom saran, spasi dua kali berturut-turut (setelah karakter terakhir) kembali ke Tools.
+     */
+    private fun trackTopBar(text: String) {
+        if (text == " ") {
+            spaceRun++
+            if (spaceRun >= 2) setTopMode(TopBarMode.TOOLS)
+        } else {
+            spaceRun = 0
+            setTopMode(TopBarMode.SUGGEST)
+        }
+    }
+
     // ----------------------------------------------------------- Ukuran/tata letak
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
@@ -272,13 +301,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
         vInset = dp(if (landscape) 3f else 4f)
         radius = dp(10f)
 
-        // Tinggi bilah atas (Tools keyboard + kolom saran kata). Bilah yang dimatikan tidak
-        // memakai ruang sama sekali. Area ini bukan area tombol: sentuhan di sini diabaikan
-        // (lihat findBox dan buildBoxes), jadi tidak ada tombol yang ikut terketik.
-        val barH = dp(if (landscape) 32f else 40f)
-        toolsH = if (toolsOn) barH else 0f
-        suggestH = if (suggestOn) barH else 0f
-        topExtra = toolsH + suggestH
+        // Tinggi bilah atas: satu bilah saja, berapa pun yang menyala (Tools, saran, atau keduanya
+        // bergantian). Keduanya mati: tidak ada ruang. Area ini bukan area tombol: sentuhan di sini
+        // diabaikan (lihat findBox dan buildBoxes), jadi tidak ada tombol yang ikut terketik.
+        barH = if (toolsOn || suggestOn) dp(if (landscape) 32f else 40f) else 0f
+        topExtra = barH
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -340,12 +367,20 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     /** Tampilan sementara bilah atas: hanya penanda ruang, belum ada isi dan belum bisa disentuh. */
     private fun drawTopBars(canvas: Canvas) {
-        var top = 0f
-        if (toolsOn) {
-            drawToolsPlaceholder(canvas, top, top + toolsH)
-            top += toolsH
+        if (barH <= 0f) return
+        when (activeTopBar()) {
+            TopBarMode.TOOLS -> drawToolsPlaceholder(canvas, 0f, barH)
+            TopBarMode.SUGGEST -> drawSuggestionPlaceholder(canvas, 0f, barH)
+            null -> Unit
         }
-        if (suggestOn) drawSuggestionPlaceholder(canvas, top, top + suggestH)
+    }
+
+    /** Isi bilah atas yang sedang tampil, atau null bila Tools dan kolom saran sama-sama mati. */
+    private fun activeTopBar(): TopBarMode? = when {
+        toolsOn && suggestOn -> topMode
+        toolsOn -> TopBarMode.TOOLS
+        suggestOn -> TopBarMode.SUGGEST
+        else -> null
     }
 
     /** Deretan kotak kosong, tempat ikon alat nanti. */
@@ -639,14 +674,13 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     // ------------------------------------------------- Karakter tekan lama
 
-    /** Karakter tekan lama (Q-P jadi angka, huruf lain jadi simbol); null bila tidak ada atau dimatikan. */
+    /** Angka tekan lama (Q-P jadi 1-0); null bila bukan huruf Q-P atau fiturnya mati. */
     private fun alternateFor(key: Key): String? {
         if (currentLayout != LayoutMode.LETTERS || key.type != KeyType.CHARACTER) return null
+        // Baris angka dan tekan lama angka tidak pernah menyala bersamaan (dijaga di Prefs).
+        if (numberRowOn || !longPressNumbersOn) return null
         val c = key.label.singleOrNull() ?: return null
-        // Baris angka dimatikan: Q sampai P memberi angka. Selain itu simbol sesuai letak di layar 123.
-        val number = KeyAlternates.NUMBER[c]
-        if (number != null && !numberRowOn && longPressNumbersOn) return number
-        return if (longPressSymbolsOn) KeyAlternates.SYMBOL[c] else null
+        return KeyAlternates.NUMBER[c]
     }
 
     private fun scheduleAltPress(id: Int, box: KeyBox) {
@@ -677,6 +711,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (vibrateOn) vibrate()
         if (shiftState == ShiftState.ONCE) shiftState = ShiftState.OFF
         listener?.onKeyText(alt)
+        trackTopBar(alt)
         if (previewPointer == id) previewBox = null
         invalidate()
     }
@@ -753,7 +788,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun perform(key: Key) {
         when (key.type) {
             KeyType.CHARACTER -> commitCharacter(key)
-            KeyType.SPACE -> listener?.onKeyText(" ")
+            KeyType.SPACE -> {
+                listener?.onKeyText(" ")
+                trackTopBar(" ")
+            }
             KeyType.SHIFT -> toggleShift()
             KeyType.ENTER -> listener?.onKeyEnter()
             KeyType.TO_SYMBOLS -> showLayout(LayoutMode.SYMBOLS_1)
@@ -767,6 +805,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val text = displayLabel(key)
         if (shiftState == ShiftState.ONCE) shiftState = ShiftState.OFF
         listener?.onKeyText(text)
+        trackTopBar(text)
     }
 
     /** Sekali ketuk = huruf besar sekali, dua kali ketuk cepat = caps lock. */

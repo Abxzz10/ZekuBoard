@@ -68,7 +68,7 @@ object KeyboardLayouts {
         return row
     }
 
-    /** Tiga baris simbol layar 123 (simbol 1). Dipakai juga sebagai simbol tekan lama di layar huruf. */
+    /** Tiga baris simbol layar 123 (simbol 1). */
     const val SYMBOL_ROW_1 = "@#\$_&-+()/"
     const val SYMBOL_ROW_2 = "%=^[]{}<>"
     const val SYMBOL_ROW_3 = "*\"':;!?"
@@ -112,9 +112,8 @@ object KeyboardLayouts {
 }
 
 /**
- * Karakter alternatif untuk tekan lama di layar huruf. Simbol mengikuti letak tombol di layar 123
- * (simbol 1): baris q-p sejajar dengan baris simbol pertama, a-l dengan baris kedua, z-m dengan baris ketiga.
- * Angka (q-p menjadi 1-0) dipakai bila baris angka dimatikan.
+ * Karakter alternatif untuk tekan lama di layar huruf: huruf q sampai p memberi angka 1 sampai 0.
+ * Hanya berlaku bila baris angka dimatikan dan "Tekan lama untuk angka" dinyalakan.
  */
 object KeyAlternates {
 
@@ -122,19 +121,4 @@ object KeyAlternates {
         'q' to "1", 'w' to "2", 'e' to "3", 'r' to "4", 't' to "5",
         'y' to "6", 'u' to "7", 'i' to "8", 'o' to "9", 'p' to "0"
     )
-
-    val SYMBOL: Map<Char, String> = buildSymbols()
-
-    private fun buildSymbols(): Map<Char, String> {
-        val map = HashMap<Char, String>()
-        fun add(letters: String, symbols: String) {
-            for (i in letters.indices) {
-                if (i < symbols.length) map[letters[i]] = symbols[i].toString()
-            }
-        }
-        add("qwertyuiop", KeyboardLayouts.SYMBOL_ROW_1)
-        add("asdfghjkl", KeyboardLayouts.SYMBOL_ROW_2)
-        add("zxcvbnm", KeyboardLayouts.SYMBOL_ROW_3)
-        return map
-    }
 }
