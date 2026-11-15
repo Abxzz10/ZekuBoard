@@ -81,6 +81,8 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         )
         trackedStart = newSelStart
         trackedEnd = newSelEnd
+        // Kursor di awal teks: bisa jadi seluruh isi kolom baru saja dihapus.
+        if (newSelStart == 0 && newSelEnd == 0) showToolsIfFieldEmpty()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -100,6 +102,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         // Event tombol DEL paling kompatibel: menghapus pilihan teks atau satu karakter.
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         refreshAutoShift()
+        showToolsIfFieldEmpty()
     }
 
     override fun onKeyEnter() {
@@ -208,6 +211,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             ic.setSelection(s.anchor, s.anchor)
         }
         refreshAutoShift()
+        showToolsIfFieldEmpty()
     }
 
     override fun onSelectCancel() {
@@ -225,6 +229,17 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     // ------------------------------------------------------------------ Bantuan
+
+    /**
+     * Kolom teks kosong (tidak ada teks sebelum maupun sesudah kursor): bilah atas kembali ke Tools,
+     * seperti mengulang dari awal. Bila kolom tidak memberi tahu isinya, bilah dibiarkan.
+     */
+    private fun showToolsIfFieldEmpty() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(1, 0) ?: return
+        val after = ic.getTextAfterCursor(1, 0) ?: return
+        if (before.isEmpty() && after.isEmpty()) keyboardView?.resetTopBar()
+    }
 
     /** Huruf besar otomatis di awal kalimat, sesuai permintaan kolom teks. */
     private fun refreshAutoShift() {
