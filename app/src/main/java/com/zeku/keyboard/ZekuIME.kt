@@ -31,6 +31,16 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     private var keyboardView: ZekuKeyboardView? = null
     private var session: SelSession? = null
 
+    // Saran kata: daftar kata dimuat di latar belakang; kolom sandi dan sejenisnya tanpa saran.
+    private lateinit var suggester: WordSuggester
+    private var suggestionsAllowed = true
+
+    override fun onCreate() {
+        super.onCreate()
+        suggester = WordSuggester(applicationContext)
+        suggester.loadAsync { refreshSuggestions() }
+    }
+
     // Posisi seleksi terakhir yang dilaporkan kolom teks.
     private var trackedStart = -1
     private var trackedEnd = -1
@@ -49,6 +59,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         super.onStartInputView(info, restarting)
         trackedStart = info?.initialSelStart ?: -1
         trackedEnd = info?.initialSelEnd ?: -1
+        suggestionsAllowed = suggestionsAllowedFor(info?.inputType ?: InputType.TYPE_NULL)
         val view = keyboardView ?: return
 
         view.applyPrefs()
@@ -60,6 +71,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         }
         refreshAutoShift()
         applyNavigationBar()
+        refreshSuggestions()
     }
 
     /** Fokus berpindah: gestur seleksi yang belum selesai dibuang tanpa menyentuh teks. */
@@ -83,6 +95,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         trackedEnd = newSelEnd
         // Kursor di awal teks: bisa jadi seluruh isi kolom baru saja dihapus.
         if (newSelStart == 0 && newSelEnd == 0) showToolsIfFieldEmpty()
+        refreshSuggestions()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -96,6 +109,20 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     override fun onKeyText(text: String) {
         currentInputConnection?.commitText(text, 1)
         refreshAutoShift()
+        refreshSuggestions()
+    }
+
+    /** Ketuk saran: kata yang sedang diketik diganti kata utuh, lalu diberi satu spasi. */
+    override fun onSuggestionPick(word: String) {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(MAX_WORD_CHARS, 0)?.toString() ?: ""
+        val typedLength = before.takeLastWhile { isAsciiLetter(it) }.length
+        ic.beginBatchEdit()
+        if (typedLength > 0) ic.deleteSurroundingText(typedLength, 0)
+        ic.commitText("$word ", 1)
+        ic.endBatchEdit()
+        refreshAutoShift()
+        refreshSuggestions()
     }
 
     override fun onKeyDelete() {
@@ -103,6 +130,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         refreshAutoShift()
         showToolsIfFieldEmpty()
+        refreshSuggestions()
     }
 
     override fun onKeyEnter() {
@@ -135,6 +163,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             sendDownUpKeyEvents(key)
         }
         refreshAutoShift()
+        refreshSuggestions()
     }
 
     // ------------------------------------------------------ Gestur Shift + hapus
@@ -212,6 +241,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         }
         refreshAutoShift()
         showToolsIfFieldEmpty()
+        refreshSuggestions()
     }
 
     override fun onSelectCancel() {
@@ -229,6 +259,54 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     // ------------------------------------------------------------------ Bantuan
+
+    private fun isAsciiLetter(c: Char): Boolean = c in 'a'..'z' || c in 'A'..'Z'
+
+    /** Saran kata hanya untuk kolom teks biasa: bukan sandi, email, alamat web, angka, atau yang menolak saran. */
+    private fun suggestionsAllowedFor(inputType: Int): Boolean {
+        if ((inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        when (inputType and InputType.TYPE_MASK_VARIATION) {
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_URI -> return false
+        }
+        return (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+    }
+
+    /** Hitung saran dari huruf yang baru diketik tepat sebelum kursor, lalu kirim ke kolom saran. */
+    private fun refreshSuggestions() {
+        val view = keyboardView ?: return
+        if (!suggestionsAllowed) {
+            view.setSuggestions(emptyList())
+            return
+        }
+        val ic = currentInputConnection
+        if (ic == null) {
+            view.setSuggestions(emptyList())
+            return
+        }
+        val before = ic.getTextBeforeCursor(MAX_WORD_CHARS, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(1, 0)?.toString() ?: ""
+        val typed = before.takeLastWhile { isAsciiLetter(it) }
+        // Kursor di tengah kata, atau belum ada huruf yang diketik: tidak ada saran.
+        if (typed.isEmpty() || (after.isNotEmpty() && isAsciiLetter(after[0]))) {
+            view.setSuggestions(emptyList())
+            return
+        }
+        view.setSuggestions(
+            suggester.suggest(typed.lowercase()).map { matchCase(typed, it) }
+        )
+    }
+
+    /** Saran mengikuti huruf besar yang diketik: Awal Besar tetap Awal Besar, SEMUA BESAR tetap besar. */
+    private fun matchCase(typed: String, word: String): String = when {
+        typed.length > 1 && typed.all { it in 'A'..'Z' } -> word.uppercase()
+        typed[0] in 'A'..'Z' -> word.substring(0, 1).uppercase() + word.substring(1)
+        else -> word
+    }
 
     /**
      * Kolom teks kosong (tidak ada teks sebelum maupun sesudah kursor): bilah atas kembali ke Tools,
@@ -290,5 +368,8 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
 
         /** Batas langkah kursor per satu kali geser, supaya geseran cepat tetap aman. */
         const val MAX_STEPS_PER_MOVE = 30
+
+        /** Panjang teks sebelum kursor yang dibaca untuk mencari kata yang sedang diketik. */
+        const val MAX_WORD_CHARS = 32
     }
 }

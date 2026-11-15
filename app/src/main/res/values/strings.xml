@@ -61,7 +61,7 @@
     <string name="pref_tools_title">Tools keyboard</string>
     <string name="pref_tools_desc">Bilah alat di atas tombol. Tampil saat kolom teks dibuka dan setelah spasi dua kali. Isinya menyusul.</string>
     <string name="pref_suggest_title">Kolom saran kata</string>
-    <string name="pref_suggest_desc">Saran kata di atas tombol. Tampil setelah mulai mengetik. Bila Tools juga menyala, keduanya bergantian di bilah yang sama. Isinya menyusul.</string>
+    <string name="pref_suggest_desc">Saran kata di atas tombol saat mengetik. Ketuk saran untuk memasukkannya. Bila Tools juga menyala, keduanya bergantian di bilah yang sama.</string>
     <string name="sec_shortcuts">Pintasan</string>
     <string name="sec_feedback">Pengetuk tombol</string>
 

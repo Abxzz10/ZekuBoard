@@ -15,6 +15,8 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.text.TextPaint
+import android.text.TextUtils
 import android.util.SparseArray
 import android.util.SparseBooleanArray
 import android.view.MotionEvent
@@ -91,6 +93,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
         /** Batalkan seleksi tanpa menghapus, kursor kembali ke titik awal. */
         fun onSelectCancel()
+
+        /** Pengguna mengetuk satu saran kata: ganti kata yang sedang diketik dengan [word] + spasi. */
+        fun onSuggestionPick(word: String)
     }
 
     var listener: Listener? = null
@@ -130,6 +135,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var barH = 0f
     private var topMode = TopBarMode.TOOLS
     private var spaceRun = 0
+
+    // Kolom saran kata: saran terkini dan jari yang sedang menekan salah satu kotaknya.
+    private var suggestions: List<String> = emptyList()
+    private var barPointer = -1
+    private var barDownCell = -1
+    private var barCell = -1
 
     /** Baris tombol untuk layar yang sedang tampil. */
     private var rows: List<List<Key>> = emptyList()
@@ -176,6 +187,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     // Simbol kecil di pojok kanan atas tombol (petunjuk tekan lama).
     private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.RIGHT
+        typeface = keyTypeface
+    }
+    private val barTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
         typeface = keyTypeface
     }
     private val icons = HashMap<Int, Drawable?>()
@@ -252,6 +267,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (enterKind == kind) return
         enterKind = kind
         invalidate()
+    }
+
+    /** Saran kata terbaru (paling banyak tiga, yang terbaik di urutan pertama). */
+    fun setSuggestions(words: List<String>) {
+        val next = words.take(SUGGESTION_COUNT)
+        if (next == suggestions) return
+        suggestions = next
+        if (activeTopBar() == TopBarMode.SUGGEST) invalidate()
     }
 
     /** Bilah atas kembali menampilkan Tools (dipanggil saat kolom teks baru dibuka). */
@@ -370,7 +393,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (barH <= 0f) return
         when (activeTopBar()) {
             TopBarMode.TOOLS -> drawToolsPlaceholder(canvas, 0f, barH)
-            TopBarMode.SUGGEST -> drawSuggestionPlaceholder(canvas, 0f, barH)
+            TopBarMode.SUGGEST -> drawSuggestionBar(canvas, 0f, barH)
             null -> Unit
         }
     }
@@ -400,14 +423,58 @@ class ZekuKeyboardView(context: Context) : View(context) {
         }
     }
 
-    /** Tiga ruang saran dipisah garis tipis, seperti kolom saran pada umumnya. */
-    private fun drawSuggestionPlaceholder(canvas: Canvas, top: Float, bottom: Float) {
+    /** Tiga kotak saran dipisah garis tipis. Saran terbaik di tengah, seperti Gboard. */
+    private fun drawSuggestionBar(canvas: Canvas, top: Float, bottom: Float) {
+        val cellW = width / 3f
+
+        // Kotak yang sedang ditekan.
+        if (barCell >= 0) {
+            fillPaint.color = (palette.keyPressed and 0x00FFFFFF) or (0x99 shl 24)
+            val rect = RectF(
+                barCell * cellW + dp(4f), top + dp(4f),
+                (barCell + 1) * cellW - dp(4f), bottom - dp(4f)
+            )
+            canvas.drawRoundRect(rect, radius, radius, fillPaint)
+        }
+
         strokePaint.color = (palette.text and 0x00FFFFFF) or (0x33 shl 24)
         strokePaint.strokeWidth = dp(1f)
         for (i in 1..2) {
-            val x = width * i / 3f
+            val x = cellW * i
             canvas.drawLine(x, top + dp(9f), x, bottom - dp(9f), strokePaint)
         }
+
+        barTextPaint.textSize = (bottom - top) * 0.42f
+        barTextPaint.color = palette.text
+        val y = (top + bottom) / 2f - (barTextPaint.ascent() + barTextPaint.descent()) / 2f
+        for (cell in 0 until SUGGESTION_COUNT) {
+            val word = suggestionAt(cell) ?: continue
+            val shown = TextUtils.ellipsize(
+                word, barTextPaint, cellW - dp(16f), TextUtils.TruncateAt.END
+            ).toString()
+            canvas.drawText(shown, cellW * cell + cellW / 2f, y, barTextPaint)
+        }
+    }
+
+    /** Saran untuk kotak [cell] (0 kiri, 1 tengah, 2 kanan), atau null bila kosong. */
+    private fun suggestionAt(cell: Int): String? =
+        suggestions.getOrNull(SLOT_ORDER[cell])?.takeIf { it.isNotEmpty() }
+
+    /** Kotak saran di titik sentuh, atau -1 bila bukan di kolom saran atau kotaknya kosong. */
+    private fun barCellAt(x: Float, y: Float): Int {
+        if (barH <= 0f || activeTopBar() != TopBarMode.SUGGEST) return -1
+        if (y < 0f || y >= barH) return -1
+        val cell = (x / (width / SUGGESTION_COUNT.toFloat())).toInt().coerceIn(0, SUGGESTION_COUNT - 1)
+        return if (suggestionAt(cell) == null) -1 else cell
+    }
+
+    private fun pickSuggestion(cell: Int) {
+        val word = suggestionAt(cell) ?: return
+        feedback(KeyType.CHARACTER)
+        listener?.onSuggestionPick(word)
+        // Kata sudah diberi satu spasi: satu ketukan spasi lagi (dua spasi) kembali ke Tools.
+        spaceRun = 1
+        setTopMode(TopBarMode.SUGGEST)
     }
 
     private fun drawKey(canvas: Canvas, box: KeyBox) {
@@ -556,6 +623,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
         box.key.type == KeyType.CHARACTER && (box.face.top - dp(2f) - rowHeight) >= 0f
 
     private fun handleDown(id: Int, x: Float, y: Float) {
+        // Sentuhan di bilah atas: hanya kotak saran yang bereaksi, tidak pernah tombol huruf.
+        if (y < topExtra) {
+            if (barPointer < 0) {
+                val cell = barCellAt(x, y)
+                if (cell >= 0) {
+                    barPointer = id
+                    barDownCell = cell
+                    barCell = cell
+                    invalidate()
+                }
+            }
+            return
+        }
         val box = findBox(x, y) ?: return
         pointers.put(id, box)
         feedback(box.key.type)
@@ -581,6 +661,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleMove(id: Int, x: Float, y: Float) {
+        if (id == barPointer) {
+            // Jari keluar dari kotak yang ditekan: batal, tidak ada saran yang dimasukkan.
+            val next = if (barCellAt(x, y) == barDownCell) barDownCell else -1
+            if (next != barCell) {
+                barCell = next
+                invalidate()
+            }
+            return
+        }
         if (id == spaceId) {
             moveSpace(x)
             return
@@ -604,6 +693,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleUp(id: Int) {
+        if (id == barPointer) {
+            val cell = barCell
+            barPointer = -1
+            barDownCell = -1
+            barCell = -1
+            if (cell >= 0) pickSuggestion(cell)
+            invalidate()
+            return
+        }
         val box = pointers.get(id) ?: return
         pointers.remove(id)
         if (lpId == id) cancelAltPress()
@@ -655,6 +753,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
         cancelAltPress()
         longFired.clear()
         pointers.clear()
+        barPointer = -1
+        barDownCell = -1
+        barCell = -1
         previewBox = null
         previewPointer = -1
     }
@@ -877,5 +978,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
         // Jumlah kotak penanda di bilah Tools keyboard (hanya tampilan sementara).
         const val TOOLS_PLACEHOLDER_COUNT = 6
+
+        // Kolom saran: tiga kotak. Urutan kotak kiri, tengah, kanan memakai saran ke-2, ke-1, ke-3.
+        const val SUGGESTION_COUNT = 3
+        val SLOT_ORDER = intArrayOf(1, 0, 2)
     }
 }
