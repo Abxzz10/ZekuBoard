@@ -283,6 +283,20 @@ class ZekuKeyboardView(context: Context) : View(context) {
         setTopMode(TopBarMode.TOOLS)
     }
 
+    /**
+     * Samakan bilah atas dengan teks tepat sebelum kursor, dipanggil saat teks dihapus atau kursor
+     * berpindah: kosong (atau hanya spasi) atau berakhir dua spasi atau lebih berarti Tools, selain itu (kursor di kata
+     * atau setelah spasi pertama) kembali ke kolom saran.
+     */
+    fun syncTopBar(textBeforeCursor: String) {
+        val trailingSpaces = textBeforeCursor.takeLastWhile { it == ' ' }.length
+        spaceRun = trailingSpaces
+        setTopMode(
+            if (textBeforeCursor.isBlank() || trailingSpaces >= 2) TopBarMode.TOOLS
+            else TopBarMode.SUGGEST
+        )
+    }
+
     private fun setTopMode(mode: TopBarMode) {
         if (topMode == mode) return
         topMode = mode

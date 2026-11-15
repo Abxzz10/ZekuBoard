@@ -1,11 +1,13 @@
 package com.zeku.keyboard
 
 import android.os.Bundle
+import android.widget.Toast
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -106,6 +108,17 @@ class PreferencesActivity : AppCompatActivity() {
             { prefs.suggestionBar }, { prefs.suggestionBar = it }
         )
 
+        // Saran kata: belajar dari ketikan (datanya hanya di perangkat)
+        addSection(R.string.sec_suggestions)
+        val suggestions = newCard()
+        addSwitch(
+            suggestions, R.string.pref_learn_title, R.string.pref_learn_desc,
+            { prefs.learnTyping }, { prefs.learnTyping = it }
+        )
+        addAction(
+            suggestions, R.string.pref_learn_clear_title, R.string.pref_learn_clear_desc
+        ) { confirmClearLearned() }
+
         // Pintasan (gestur)
         addSection(R.string.sec_shortcuts)
         val shortcuts = newCard()
@@ -186,6 +199,35 @@ class PreferencesActivity : AppCompatActivity() {
         if (card.childCount > 0) addDivider(card)
         card.addView(row)
         return sw
+    }
+
+    /** Baris yang bisa diketuk tanpa saklar. */
+    private fun addAction(
+        card: LinearLayout,
+        @StringRes title: Int,
+        @StringRes desc: Int,
+        onClick: () -> Unit
+    ) {
+        val row = layoutInflater.inflate(R.layout.item_pref_switch, card, false)
+        row.findViewById<View>(R.id.prefSwitch).visibility = View.GONE
+        row.findViewById<TextView>(R.id.prefTitle).setText(title)
+        row.findViewById<TextView>(R.id.prefDesc).setText(desc)
+        row.setOnClickListener { onClick() }
+
+        if (card.childCount > 0) addDivider(card)
+        card.addView(row)
+    }
+
+    private fun confirmClearLearned() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_clear_learned_title)
+            .setMessage(R.string.dialog_clear_learned_message)
+            .setPositiveButton(R.string.btn_delete) { _, _ ->
+                LearnedWords.clear(this)
+                Toast.makeText(this, R.string.toast_learned_cleared, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
     }
 
     private fun addSlider(

@@ -58,6 +58,16 @@
     <string name="sec_long_press">Tekan lama</string>
     <string name="sec_display">Tampilan</string>
     <string name="sec_top_bars">Bilah atas</string>
+    <string name="sec_suggestions">Saran kata</string>
+    <string name="pref_learn_title">Belajar dari ketikan</string>
+    <string name="pref_learn_desc">Kata yang sering kamu ketik, termasuk nama dan singkatan, naik urutannya di saran. Datanya hanya di perangkat ini dan tidak dikirim ke mana pun. Tidak mencatat di kolom sandi.</string>
+    <string name="pref_learn_clear_title">Hapus kata yang dipelajari</string>
+    <string name="pref_learn_clear_desc">Hapus semua kata yang tersimpan dari ketikanmu</string>
+    <string name="dialog_clear_learned_title">Hapus kata yang dipelajari?</string>
+    <string name="dialog_clear_learned_message">Semua kata yang dipelajari dari ketikanmu akan dihapus. Daftar kata bawaan tidak ikut terhapus.</string>
+    <string name="btn_delete">Hapus</string>
+    <string name="btn_cancel">Batal</string>
+    <string name="toast_learned_cleared">Kata yang dipelajari sudah dihapus</string>
     <string name="pref_tools_title">Tools keyboard</string>
     <string name="pref_tools_desc">Bilah alat di atas tombol. Tampil saat kolom teks dibuka dan setelah spasi dua kali. Isinya menyusul.</string>
     <string name="pref_suggest_title">Kolom saran kata</string>

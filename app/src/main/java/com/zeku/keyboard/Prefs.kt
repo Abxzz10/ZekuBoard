@@ -119,6 +119,14 @@ class Prefs(context: Context) {
         get() = readInt(KEY_HEIGHT, HEIGHT_DEFAULT, HEIGHT_MIN, HEIGHT_MAX)
         set(value) = writeInt(KEY_HEIGHT, value, HEIGHT_MIN, HEIGHT_MAX)
 
+    /**
+     * Belajar dari ketikan: kata yang sering diketik naik urutannya di saran kata.
+     * Datanya hanya di perangkat. Mati: tidak mencatat dan tidak memakai data yang sudah ada.
+     */
+    var learnTyping: Boolean
+        get() = readBool(KEY_LEARN_TYPING, true)
+        set(value) = writeBool(KEY_LEARN_TYPING, value)
+
     /** Bilah Tools keyboard di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
     var toolsBar: Boolean
         get() = readBool(KEY_TOOLS_BAR, true)
@@ -294,6 +302,7 @@ class Prefs(context: Context) {
         private const val KEY_SOUND_VOLUME = "sound_volume"
         private const val KEY_LP_DELAY = "long_press_delay"
         private const val KEY_TOOLS_BAR = "tools_bar"
+        private const val KEY_LEARN_TYPING = "learn_typing"
         private const val KEY_SUGGESTION_BAR = "suggestion_bar"
 
         /** Semua kunci pengaturan mengetik (semua kecuali tema). */
@@ -303,7 +312,7 @@ class Prefs(context: Context) {
             KEY_LP_NUMBERS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
-            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR
+            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING
         )
     }
 }
