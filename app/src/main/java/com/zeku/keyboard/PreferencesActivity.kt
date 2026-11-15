@@ -22,6 +22,10 @@ class PreferencesActivity : AppCompatActivity() {
     private lateinit var prefs: Prefs
     private lateinit var container: LinearLayout
 
+    // Dua saklar yang saling meniadakan (baris angka dan tekan lama untuk angka).
+    private var swNumberRow: MaterialSwitch? = null
+    private var swLpNumbers: MaterialSwitch? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
@@ -44,9 +48,14 @@ class PreferencesActivity : AppCompatActivity() {
         // Tombol
         addSection(R.string.sec_keys)
         val keys = newCard()
-        addSwitch(
+        swNumberRow = addSwitch(
             keys, R.string.pref_number_row_title, R.string.pref_number_row_desc,
-            { prefs.numberRow }, { prefs.numberRow = it }
+            { prefs.numberRow },
+            {
+                prefs.numberRow = it
+                // Baris angka menyala: tekan lama untuk angka otomatis mati.
+                if (it) swLpNumbers?.isChecked = false
+            }
         )
         addSwitch(
             keys, R.string.pref_comma_title, R.string.pref_comma_desc,
@@ -60,9 +69,14 @@ class PreferencesActivity : AppCompatActivity() {
         // Tekan lama
         addSection(R.string.sec_long_press)
         val longPress = newCard()
-        addSwitch(
+        swLpNumbers = addSwitch(
             longPress, R.string.pref_lp_numbers_title, R.string.pref_lp_numbers_desc,
-            { prefs.longPressNumbers }, { prefs.longPressNumbers = it }
+            { prefs.longPressNumbers },
+            {
+                prefs.longPressNumbers = it
+                // Tekan lama untuk angka menyala: baris angka otomatis mati.
+                if (it) swNumberRow?.isChecked = false
+            }
         )
         addSwitch(
             longPress, R.string.pref_lp_symbols_title, R.string.pref_lp_symbols_desc,
@@ -82,6 +96,18 @@ class PreferencesActivity : AppCompatActivity() {
             display, R.string.height_title, R.string.pref_height_desc,
             Prefs.HEIGHT_MIN, Prefs.HEIGHT_MAX, Prefs.HEIGHT_STEP,
             { prefs.heightPercent }, { prefs.heightPercent = it }
+        )
+
+        // Bilah atas: tempat Tools keyboard dan kolom saran kata (isinya menyusul)
+        addSection(R.string.sec_top_bars)
+        val topBars = newCard()
+        addSwitch(
+            topBars, R.string.pref_tools_title, R.string.pref_tools_desc,
+            { prefs.toolsBar }, { prefs.toolsBar = it }
+        )
+        addSwitch(
+            topBars, R.string.pref_suggest_title, R.string.pref_suggest_desc,
+            { prefs.suggestionBar }, { prefs.suggestionBar = it }
         )
 
         // Pintasan (gestur)
@@ -149,7 +175,7 @@ class PreferencesActivity : AppCompatActivity() {
         @StringRes desc: Int,
         get: () -> Boolean,
         set: (Boolean) -> Unit
-    ) {
+    ): MaterialSwitch {
         val row = layoutInflater.inflate(R.layout.item_pref_switch, card, false)
         val sw = row.findViewById<MaterialSwitch>(R.id.prefSwitch)
         row.findViewById<TextView>(R.id.prefTitle).setText(title)
@@ -163,6 +189,7 @@ class PreferencesActivity : AppCompatActivity() {
 
         if (card.childCount > 0) addDivider(card)
         card.addView(row)
+        return sw
     }
 
     private fun addSlider(

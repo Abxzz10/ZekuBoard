@@ -71,10 +71,17 @@ class Prefs(context: Context) {
 
     // ------------------------------------------------------------ Tombol (Keypad)
 
-    /** Baris angka 1-0 di atas huruf (hanya di layar huruf). */
+    /**
+     * Baris angka 1-0 di atas huruf (hanya di layar huruf).
+     * Saling meniadakan dengan [longPressNumbers]: menyalakan ini mematikan yang satunya.
+     */
     var numberRow: Boolean
         get() = readBool(KEY_NUMBER_ROW, true)
-        set(value) = writeBool(KEY_NUMBER_ROW, value)
+        set(value) {
+            val editor = sp.edit().putBoolean(KEY_NUMBER_ROW, value)
+            if (value) editor.putBoolean(KEY_LP_NUMBERS, false)
+            editor.apply()
+        }
 
     /** Tekan lama angka di baris angka memasukkan simbolnya (1 menjadi !). */
     var numberRowSymbols: Boolean
@@ -89,10 +96,18 @@ class Prefs(context: Context) {
         get() = readBool(KEY_PERIOD, true)
         set(value) = writeBool(KEY_PERIOD, value)
 
-    /** Tekan lama huruf Q sampai P memasukkan angka. */
+    /**
+     * Tekan lama huruf Q sampai P memasukkan angka.
+     * Saling meniadakan dengan [numberRow]: keduanya boleh mati, tidak boleh menyala bersamaan.
+     * Bila data lama menyimpan keduanya menyala, baris angka yang menang.
+     */
     var longPressNumbers: Boolean
-        get() = readBool(KEY_LP_NUMBERS, true)
-        set(value) = writeBool(KEY_LP_NUMBERS, value)
+        get() = readBool(KEY_LP_NUMBERS, false) && !numberRow
+        set(value) {
+            val editor = sp.edit().putBoolean(KEY_LP_NUMBERS, value)
+            if (value) editor.putBoolean(KEY_NUMBER_ROW, false)
+            editor.apply()
+        }
 
     /** Tekan lama huruf lain memasukkan simbol (A menjadi @, dan seterusnya). */
     var longPressSymbols: Boolean
@@ -108,6 +123,16 @@ class Prefs(context: Context) {
     var heightPercent: Int
         get() = readInt(KEY_HEIGHT, HEIGHT_DEFAULT, HEIGHT_MIN, HEIGHT_MAX)
         set(value) = writeInt(KEY_HEIGHT, value, HEIGHT_MIN, HEIGHT_MAX)
+
+    /** Ruang Tools keyboard di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
+    var toolsBar: Boolean
+        get() = readBool(KEY_TOOLS_BAR, true)
+        set(value) = writeBool(KEY_TOOLS_BAR, value)
+
+    /** Ruang kolom saran kata di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
+    var suggestionBar: Boolean
+        get() = readBool(KEY_SUGGESTION_BAR, true)
+        set(value) = writeBool(KEY_SUGGESTION_BAR, value)
 
     var widthPercent: Int
         get() = readInt(KEY_WIDTH, WIDTH_DEFAULT, WIDTH_MIN, WIDTH_MAX)
@@ -271,6 +296,8 @@ class Prefs(context: Context) {
         private const val KEY_VIBRATE_STRENGTH = "vibrate_strength"
         private const val KEY_SOUND_VOLUME = "sound_volume"
         private const val KEY_LP_DELAY = "long_press_delay"
+        private const val KEY_TOOLS_BAR = "tools_bar"
+        private const val KEY_SUGGESTION_BAR = "suggestion_bar"
 
         /** Semua kunci pengaturan mengetik (semua kecuali tema). */
         private val TYPING_KEYS = listOf(
@@ -279,7 +306,7 @@ class Prefs(context: Context) {
             KEY_LP_NUMBERS, KEY_LP_SYMBOLS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
-            KEY_LP_DELAY
+            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR
         )
     }
 }

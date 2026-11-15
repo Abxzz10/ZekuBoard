@@ -57,11 +57,16 @@
     <string name="sec_keys">Tombol</string>
     <string name="sec_long_press">Tekan lama</string>
     <string name="sec_display">Tampilan</string>
+    <string name="sec_top_bars">Bilah atas</string>
+    <string name="pref_tools_title">Tools keyboard</string>
+    <string name="pref_tools_desc">Sediakan ruang bilah alat di atas tombol. Isinya menyusul.</string>
+    <string name="pref_suggest_title">Kolom saran kata</string>
+    <string name="pref_suggest_desc">Sediakan ruang saran kata di atas tombol. Isinya menyusul.</string>
     <string name="sec_shortcuts">Pintasan</string>
     <string name="sec_feedback">Pengetuk tombol</string>
 
     <string name="pref_number_row_title">Baris angka</string>
-    <string name="pref_number_row_desc">Tampilkan angka 1 sampai 0 di atas huruf</string>
+    <string name="pref_number_row_desc">Tampilkan angka 1 sampai 0 di atas huruf. Tidak bisa menyala bersamaan dengan Tekan lama untuk angka.</string>
     <string name="pref_number_symbols_title">Simbol di baris angka</string>
     <string name="pref_number_symbols_desc">Tekan lama angka untuk memasukkan simbol, misalnya 1 menjadi !</string>
     <string name="pref_comma_title">Tombol koma</string>
@@ -69,7 +74,7 @@
     <string name="pref_period_title">Tombol titik</string>
     <string name="pref_period_desc">Tampilkan di layar huruf. Di layar simbol tetap ada.</string>
     <string name="pref_lp_numbers_title">Tekan lama untuk angka</string>
-    <string name="pref_lp_numbers_desc">Saat baris angka dimatikan, tekan lama huruf Q sampai P memasukkan angka 1 sampai 0</string>
+    <string name="pref_lp_numbers_desc">Tekan lama huruf Q sampai P memasukkan angka 1 sampai 0. Tidak bisa menyala bersamaan dengan Baris angka.</string>
     <string name="pref_lp_symbols_title">Tekan lama untuk simbol</string>
     <string name="pref_lp_symbols_desc">Tekan lama huruf memasukkan simbol sesuai letaknya di layar 123. Simbolnya tampil kecil di tombol</string>
 

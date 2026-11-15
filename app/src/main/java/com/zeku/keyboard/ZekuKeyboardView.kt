@@ -121,6 +121,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var commaOn = true
     private var periodOn = true
 
+    // Ruang di atas tombol untuk Tools keyboard dan kolom saran kata (isinya menyusul).
+    private var toolsOn = true
+    private var suggestOn = true
+    private var toolsH = 0f
+    private var suggestH = 0f
+
     /** Baris tombol untuk layar yang sedang tampil. */
     private var rows: List<List<Key>> = emptyList()
 
@@ -205,6 +211,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
         numberRowOn = prefs.numberRow
         commaOn = prefs.commaKey
         periodOn = prefs.periodKey
+        toolsOn = prefs.toolsBar
+        suggestOn = prefs.suggestionBar
         heightScale = prefs.heightPercent.coerceIn(80, 120) / 100f
         isDarkTheme = when (prefs.theme) {
             Prefs.THEME_DARK -> true
@@ -264,9 +272,13 @@ class ZekuKeyboardView(context: Context) : View(context) {
         vInset = dp(if (landscape) 3f else 4f)
         radius = dp(10f)
 
-        // Tanpa baris angka, keyboard cukup lebih pendek: tidak ada ruang kosong di atas.
-        // Baris huruf paling atas tidak punya ruang untuk gelembung pratinjau (canPreview = false).
-        topExtra = 0f
+        // Tinggi bilah atas (Tools keyboard + kolom saran kata). Bilah yang dimatikan tidak
+        // memakai ruang sama sekali. Area ini bukan area tombol: sentuhan di sini diabaikan
+        // (lihat findBox dan buildBoxes), jadi tidak ada tombol yang ikut terketik.
+        val barH = dp(if (landscape) 32f else 40f)
+        toolsH = if (toolsOn) barH else 0f
+        suggestH = if (suggestOn) barH else 0f
+        topExtra = toolsH + suggestH
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -309,7 +321,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
                 // Perluas area sentuh sampai tepi layar / antar baris supaya tidak ada area mati.
                 rowBoxes.first().cell.left = 0f
                 rowBoxes.last().cell.right = width.toFloat()
-                if (r == 0) rowBoxes.forEach { it.cell.top = 0f }
+                // Baris pertama hanya diperluas sampai bawah bilah atas, bukan sampai tepi layar.
+                if (r == 0) rowBoxes.forEach { it.cell.top = topExtra }
                 if (r == rows.size - 1) rowBoxes.forEach { it.cell.bottom = height.toFloat() }
             }
             boxes.addAll(rowBoxes)
@@ -320,8 +333,46 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(palette.background)
+        drawTopBars(canvas)
         for (box in boxes) drawKey(canvas, box)
         previewBox?.let { drawPreview(canvas, it) }
+    }
+
+    /** Tampilan sementara bilah atas: hanya penanda ruang, belum ada isi dan belum bisa disentuh. */
+    private fun drawTopBars(canvas: Canvas) {
+        var top = 0f
+        if (toolsOn) {
+            drawToolsPlaceholder(canvas, top, top + toolsH)
+            top += toolsH
+        }
+        if (suggestOn) drawSuggestionPlaceholder(canvas, top, top + suggestH)
+    }
+
+    /** Deretan kotak kosong, tempat ikon alat nanti. */
+    private fun drawToolsPlaceholder(canvas: Canvas, top: Float, bottom: Float) {
+        val margin = dp(8f)
+        val gap = dp(10f)
+        val side = (bottom - top) - dp(12f)
+        if (side <= 0f) return
+        val fit = ((width - 2 * margin + gap) / (side + gap)).toInt()
+        val count = fit.coerceIn(0, TOOLS_PLACEHOLDER_COUNT)
+        fillPaint.color = (palette.key and 0x00FFFFFF) or (0x99 shl 24)
+        var x = margin
+        for (i in 0 until count) {
+            val rect = RectF(x, top + dp(6f), x + side, bottom - dp(6f))
+            canvas.drawRoundRect(rect, radius, radius, fillPaint)
+            x += side + gap
+        }
+    }
+
+    /** Tiga ruang saran dipisah garis tipis, seperti kolom saran pada umumnya. */
+    private fun drawSuggestionPlaceholder(canvas: Canvas, top: Float, bottom: Float) {
+        strokePaint.color = (palette.text and 0x00FFFFFF) or (0x33 shl 24)
+        strokePaint.strokeWidth = dp(1f)
+        for (i in 1..2) {
+            val x = width * i / 3f
+            canvas.drawLine(x, top + dp(9f), x, bottom - dp(9f), strokePaint)
+        }
     }
 
     private fun drawKey(canvas: Canvas, box: KeyBox) {
@@ -455,8 +506,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun findBox(x: Float, y: Float): KeyBox? {
         if (boxes.isEmpty()) return null
+        // Bilah atas (Tools keyboard dan kolom saran kata) bukan tombol. Dulu sentuhan di luar
+        // tombol dipaksa masuk ke baris paling atas; sekarang area ini tidak memasukkan apa pun.
+        if (y < topExtra) return null
         val px = x.coerceIn(0f, width - 1f)
-        val py = y.coerceIn(0f, height - 1f)
+        val py = y.coerceAtMost(height - 1f)
         for (box in boxes) {
             if (box.cell.contains(px, py)) return box
         }
@@ -781,5 +835,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val SPACE_ACTIVATE_DP = 16f
         const val SPACE_STEP_DP = 12f
         const val SELECT_STEP_DP = 10f
+
+        // Jumlah kotak penanda di bilah Tools keyboard (hanya tampilan sementara).
+        const val TOOLS_PLACEHOLDER_COUNT = 6
     }
 }
