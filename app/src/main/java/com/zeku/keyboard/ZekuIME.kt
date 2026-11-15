@@ -46,11 +46,6 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         LearnedWords.loadAsync(applicationContext) { refreshSuggestions() }
     }
 
-    override fun onFinishInput() {
-        super.onFinishInput()
-        LearnedWords.flush()
-    }
-
     override fun onDestroy() {
         LearnedWords.flush()
         super.onDestroy()
@@ -94,6 +89,8 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     /** Fokus berpindah: gestur seleksi yang belum selesai dibuang tanpa menyentuh teks. */
     override fun onFinishInput() {
         session = null
+        // Simpan kata yang dipelajari sebelum kolom teks ditutup.
+        LearnedWords.flush()
         super.onFinishInput()
     }
 
