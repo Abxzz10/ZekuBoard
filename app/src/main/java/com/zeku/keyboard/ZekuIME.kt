@@ -80,6 +80,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             view.showLayout(startLayoutFor(info?.inputType ?: InputType.TYPE_NULL))
             view.applyShift(ShiftState.OFF)
             view.resetTopBar()
+            view.closeEmoji()
         }
         refreshAutoShift()
         applyNavigationBar()

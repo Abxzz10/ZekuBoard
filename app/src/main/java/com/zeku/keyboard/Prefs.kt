@@ -127,6 +127,18 @@ class Prefs(context: Context) {
         get() = readBool(KEY_LEARN_TYPING, true)
         set(value) = writeBool(KEY_LEARN_TYPING, value)
 
+    /** Emoji: tekan lama tombol koma membuka panel emoji. */
+    var emoji: Boolean
+        get() = readBool(KEY_EMOJI, true)
+        set(value) = writeBool(KEY_EMOJI, value)
+
+    /** Emoji yang terakhir dipakai, dipisah spasi, yang terbaru di depan. */
+    var emojiRecents: String
+        get() = readString(KEY_EMOJI_RECENTS, "")
+        set(value) {
+            sp.edit().putString(KEY_EMOJI_RECENTS, value).apply()
+        }
+
     /** Bilah Tools keyboard di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
     var toolsBar: Boolean
         get() = readBool(KEY_TOOLS_BAR, true)
@@ -199,6 +211,7 @@ class Prefs(context: Context) {
         get() = readBool(KEY_VIBRATE, true)
         set(value) = writeBool(KEY_VIBRATE, value)
 
+    /** Lama getar tiap ketukan, dalam milidetik (5 sampai 100). */
     var vibrateStrength: Int
         get() = readInt(KEY_VIBRATE_STRENGTH, STRENGTH_DEFAULT, STRENGTH_MIN, STRENGTH_MAX)
         set(value) = writeInt(KEY_VIBRATE_STRENGTH, value, STRENGTH_MIN, STRENGTH_MAX)
@@ -207,6 +220,7 @@ class Prefs(context: Context) {
         get() = readBool(KEY_SOUND, false)
         set(value) = writeBool(KEY_SOUND, value)
 
+    /** Volume suara tiap ketukan, dalam persen (5 sampai 100). */
     var soundVolume: Int
         get() = readInt(KEY_SOUND_VOLUME, VOLUME_DEFAULT, VOLUME_MIN, VOLUME_MAX)
         set(value) = writeInt(KEY_SOUND_VOLUME, value, VOLUME_MIN, VOLUME_MAX)
@@ -258,15 +272,17 @@ class Prefs(context: Context) {
         const val WIDTH_DEFAULT = 100
         const val WIDTH_STEP = 5
 
-        const val STRENGTH_MIN = 10
+        // Durasi getar dalam milidetik (ms).
+        const val STRENGTH_MIN = 5
         const val STRENGTH_MAX = 100
-        const val STRENGTH_DEFAULT = 100
-        const val STRENGTH_STEP = 10
+        const val STRENGTH_DEFAULT = 20
+        const val STRENGTH_STEP = 5
 
-        const val VOLUME_MIN = 10
+        // Volume suara tombol dalam persen.
+        const val VOLUME_MIN = 5
         const val VOLUME_MAX = 100
         const val VOLUME_DEFAULT = 100
-        const val VOLUME_STEP = 10
+        const val VOLUME_STEP = 5
 
         const val LP_DELAY_MIN = 100
         const val LP_DELAY_MAX = 1000
@@ -303,6 +319,8 @@ class Prefs(context: Context) {
         private const val KEY_LP_DELAY = "long_press_delay"
         private const val KEY_TOOLS_BAR = "tools_bar"
         private const val KEY_LEARN_TYPING = "learn_typing"
+        private const val KEY_EMOJI = "emoji_enabled"
+        private const val KEY_EMOJI_RECENTS = "emoji_recents"
         private const val KEY_SUGGESTION_BAR = "suggestion_bar"
 
         /** Semua kunci pengaturan mengetik (semua kecuali tema). */
@@ -312,7 +330,7 @@ class Prefs(context: Context) {
             KEY_LP_NUMBERS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
-            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING
+            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING, KEY_EMOJI
         )
     }
 }

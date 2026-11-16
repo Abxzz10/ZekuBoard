@@ -68,6 +68,9 @@
     <string name="btn_delete">Hapus</string>
     <string name="btn_cancel">Batal</string>
     <string name="toast_learned_cleared">Kata yang dipelajari sudah dihapus</string>
+    <string name="pref_emoji_title">Emoji</string>
+    <string name="pref_emoji_desc">Tekan lama tombol koma untuk membuka emoji. Lama tekannya mengikuti Durasi tekan lama. Bila tombol koma disembunyikan, tekan lama tombol 123 atau ABC.</string>
+    <string name="emoji_empty">Belum ada emoji terbaru</string>
     <string name="pref_tools_title">Tools keyboard</string>
     <string name="pref_tools_desc">Bilah alat di atas tombol. Tampil saat kolom teks dibuka atau kosong, dan saat tidak ada saran. Isinya menyusul.</string>
     <string name="pref_suggest_title">Kolom saran kata</string>
@@ -121,7 +124,7 @@
     <string name="pref_popup_desc">Tombol mengecil sebentar saat ditekan</string>
     <string name="vibrate_title">Getar saat mengetik</string>
     <string name="vibrate_desc">Umpan balik tiap tombol</string>
-    <string name="pref_vibrate_strength_title">Kekuatan getar</string>
+    <string name="pref_vibrate_strength_title">Durasi getar</string>
     <string name="pref_vibrate_strength_desc">Lepas slider untuk merasakan getarnya</string>
     <string name="sound_title">Suara tombol</string>
     <string name="sound_desc">Bunyi klik saat mengetik. Mengikuti suara sentuh di pengaturan HP.</string>

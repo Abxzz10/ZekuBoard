@@ -21,8 +21,10 @@ import android.util.SparseArray
 import android.util.SparseBooleanArray
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 
 enum class ShiftState { OFF, ONCE, LOCK }
@@ -34,6 +36,18 @@ enum class TopBarMode { TOOLS, SUGGEST }
 enum class EnterKind { ENTER, SEARCH, SEND, NEXT, DONE }
 
 private class KeyBox(val key: Key, val cell: RectF, val face: RectF)
+
+/** Ukuran panel emoji: baris tab di atas, kisi di tengah, baris tombol bawah. */
+private class EmojiGeo(
+    val tabsTop: Float,
+    val tabsBottom: Float,
+    val gridTop: Float,
+    val gridBottom: Float,
+    val bottomTop: Float,
+    val bottomBottom: Float,
+    val cols: Int,
+    val cell: Float
+)
 
 private class Palette(
     val background: Int,
@@ -122,6 +136,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var gestureSelectOn = true
     private var longPressNumbersOn = true
     private var longPressDelay = Prefs.LP_DELAY_DEFAULT.toLong()
+    private var vibrateMs = Prefs.STRENGTH_DEFAULT.toLong()
+    private var soundGain = 1f
+    private var emojiOn = true
 
     // Pilihan tombol di layar huruf (dari Preferences Typing).
     private var numberRowOn = true
@@ -143,6 +160,22 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var barPointer = -1
     private var barDownCell = -1
     private var barCell = -1
+
+    // Panel emoji (dibuka dengan tekan lama tombol koma), menggantikan tombol selama terbuka.
+    private var emojiOpen = false
+    private var emojiTab = 0
+    private var emojiScroll = 0f
+    private var emojiLists: List<List<String>>? = null
+    private var emojiRecents: List<String> = emptyList()
+    private var emojiTouchActive = false
+    private var emojiRegion = EMOJI_NONE
+    private var emojiTarget = -1
+    private var emojiDownY = 0f
+    private var emojiLastY = 0f
+    private var emojiScrolling = false
+    private var emojiPressedIndex = -1
+    private var emojiPressedBottom = -1
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
 
     /** Baris tombol untuk layar yang sedang tampil. */
     private var rows: List<List<Key>> = emptyList()
@@ -195,6 +228,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         textAlign = Paint.Align.CENTER
         typeface = keyTypeface
     }
+    private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val icons = HashMap<Int, Drawable?>()
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -228,6 +262,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
         gestureSelectOn = prefs.gestureSelect
         longPressNumbersOn = prefs.longPressNumbers
         longPressDelay = prefs.longPressDelay.toLong()
+        vibrateMs = prefs.vibrateStrength.toLong()
+        soundGain = (prefs.soundVolume / 100f).coerceIn(0f, 1f)
+        emojiOn = prefs.emoji
+        if (!emojiOn) emojiOpen = false
         numberRowOn = prefs.numberRow
         commaOn = prefs.commaKey
         periodOn = prefs.periodKey
@@ -340,7 +378,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         updateMetrics()
-        val h = (rowHeight * rows.size + topTotal + bottomPad).toInt()
+        // Panel emoji butuh paling sedikit 5 baris tinggi supaya kisinya cukup lega.
+        val rowCount = if (emojiOpen) max(rows.size, EMOJI_MIN_ROWS) else rows.size
+        val h = (rowHeight * rowCount + topTotal + bottomPad).toInt()
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), h)
     }
 
@@ -390,6 +430,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(palette.background)
+        if (emojiOpen) {
+            drawEmojiPanel(canvas)
+            return
+        }
         drawTopBars(canvas)
         for (box in boxes) drawKey(canvas, box)
         previewBox?.let { drawPreview(canvas, it) }
@@ -497,7 +541,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
         when (key.type) {
             KeyType.CHARACTER -> {
                 drawLabel(canvas, face, displayLabel(key), rowHeight * 0.42f)
-                alternateFor(key)?.let { drawHint(canvas, face, it) }
+                val alt = alternateFor(key)
+                if (alt != null) {
+                    drawHint(canvas, face, alt)
+                } else if (isEmojiEntry(key)) {
+                    drawHint(canvas, face, EMOJI_HINT)
+                }
             }
             KeyType.TO_SYMBOLS, KeyType.TO_SYMBOLS_2, KeyType.TO_LETTERS ->
                 drawLabel(canvas, face, key.label, rowHeight * 0.32f)
@@ -585,6 +634,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     // ---------------------------------------------------------------- Sentuhan
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (emojiOpen) return handleEmojiTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelTouches()
@@ -659,7 +709,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
             }
             previewBox = if (canPreview(box)) box else null
             previewPointer = id
-            if (box.key.type == KeyType.CHARACTER) scheduleAltPress(id, box)
+            if (box.key.type == KeyType.CHARACTER || isEmojiEntry(box.key)) scheduleAltPress(id, box)
         }
         invalidate()
     }
@@ -790,7 +840,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun scheduleAltPress(id: Int, box: KeyBox) {
         cancelAltPress()
-        if (alternateFor(box.key) == null) return
+        if (alternateFor(box.key) == null && !isEmojiEntry(box.key)) return
         lpId = id
         lpBox = box
         repeatHandler.postDelayed(lpRunnable, longPressDelay)
@@ -810,6 +860,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (box == null || id < 0) return
         // Jari sudah pindah atau lepas: tidak ada yang dimasukkan.
         if (pointers.get(id) !== box) return
+
+        // Tekan lama tombol emoji: buka panel emoji (lamanya sama dengan Durasi tekan lama).
+        if (isEmojiEntry(box.key)) {
+            longFired.put(id, true)
+            if (vibrateOn) vibrate()
+            openEmoji()
+            return
+        }
+
         val alt = alternateFor(box.key) ?: return
 
         longFired.put(id, true)
@@ -818,6 +877,296 @@ class ZekuKeyboardView(context: Context) : View(context) {
         listener?.onKeyText(alt)
         if (previewPointer == id) previewBox = null
         invalidate()
+    }
+
+    // -------------------------------------------------------------------- Emoji
+
+    /**
+     * Tombol yang membuka panel emoji bila ditekan lama: tombol koma, atau tombol 123 / ABC
+     * bila koma disembunyikan di layar huruf.
+     */
+    private fun isEmojiEntry(key: Key): Boolean {
+        if (!emojiOn) return false
+        val hasComma = currentLayout != LayoutMode.LETTERS || commaOn
+        return if (hasComma) {
+            key.type == KeyType.CHARACTER && key.label == ","
+        } else {
+            key.type == KeyType.TO_SYMBOLS || key.type == KeyType.TO_LETTERS
+        }
+    }
+
+    private fun openEmoji() {
+        if (emojiOpen) return
+        cancelTouches()
+        if (emojiLists == null) {
+            // Buang emoji yang tidak punya gambar di font perangkat ini.
+            emojiLists = EmojiData.categories.map { c -> c.items.filter { emojiPaint.hasGlyph(it) } }
+        }
+        emojiRecents = prefs.emojiRecents.split(' ').filter { it.isNotEmpty() && emojiPaint.hasGlyph(it) }
+        emojiTab = if (emojiRecents.isNotEmpty()) 0 else 1
+        emojiScroll = 0f
+        emojiPressedIndex = -1
+        emojiPressedBottom = -1
+        emojiTouchActive = false
+        emojiOpen = true
+        requestLayout()
+        invalidate()
+    }
+
+    /** Tutup panel emoji dan kembali ke tombol. */
+    fun closeEmoji() {
+        if (!emojiOpen) return
+        emojiOpen = false
+        emojiTouchActive = false
+        repeatHandler.removeCallbacks(repeatRunnable)
+        requestLayout()
+        invalidate()
+    }
+
+    private fun currentEmojiList(): List<String> =
+        if (emojiTab == 0) emojiRecents else emojiLists?.getOrNull(emojiTab - 1) ?: emptyList()
+
+    private fun emojiTabCount(): Int = EmojiData.categories.size + 1
+
+    private fun emojiGeo(): EmojiGeo {
+        val tabsTop = dp(4f)
+        val tabsBottom = tabsTop + rowHeight * 0.8f
+        val bottomBottom = height - bottomPad
+        val bottomTop = bottomBottom - rowHeight
+        val gridTop = tabsBottom + dp(2f)
+        val gridBottom = bottomTop - dp(2f)
+        val cols = max(6, (width / dp(46f)).toInt())
+        return EmojiGeo(
+            tabsTop, tabsBottom, gridTop, gridBottom, bottomTop, bottomBottom,
+            cols, width / cols.toFloat()
+        )
+    }
+
+    private fun emojiScrollMax(g: EmojiGeo, count: Int): Float {
+        val content = ceil(count / g.cols.toFloat()) * g.cell
+        return max(0f, content - (g.gridBottom - g.gridTop))
+    }
+
+    private fun emojiTabAt(x: Float): Int =
+        (x / (width / emojiTabCount().toFloat())).toInt().coerceIn(0, emojiTabCount() - 1)
+
+    /** Tombol bawah: 0 = ABC, 1 = spasi, 2 = hapus (lebar 2 : 6 : 2). */
+    private fun emojiBottomIndex(x: Float): Int {
+        val unit = (width - 2 * sidePad) / 10f
+        return when {
+            x < sidePad + 2 * unit -> 0
+            x < sidePad + 8 * unit -> 1
+            else -> 2
+        }
+    }
+
+    private fun emojiIndexAt(x: Float, y: Float, g: EmojiGeo): Int {
+        val col = (x / g.cell).toInt()
+        if (col !in 0 until g.cols) return -1
+        val row = ((y - g.gridTop + emojiScroll) / g.cell).toInt()
+        return row * g.cols + col
+    }
+
+    private fun drawEmojiPanel(canvas: Canvas) {
+        val g = emojiGeo()
+
+        // Tab kategori.
+        val tabW = width / emojiTabCount().toFloat()
+        emojiPaint.textSize = (g.tabsBottom - g.tabsTop) * 0.52f
+        val tabBase = (g.tabsTop + g.tabsBottom) / 2f - (emojiPaint.ascent() + emojiPaint.descent()) / 2f
+        for (i in 0 until emojiTabCount()) {
+            val left = tabW * i
+            if (i == emojiTab) {
+                fillPaint.color = palette.key
+                val rect = RectF(left + dp(2f), g.tabsTop, left + tabW - dp(2f), g.tabsBottom)
+                canvas.drawRoundRect(rect, radius, radius, fillPaint)
+            }
+            val icon = if (i == 0) EMOJI_RECENT_ICON else EmojiData.categories[i - 1].icon
+            canvas.drawText(icon, left + tabW / 2f, tabBase, emojiPaint)
+        }
+
+        // Kisi emoji (bisa digulir ke atas dan bawah).
+        val list = currentEmojiList()
+        canvas.save()
+        canvas.clipRect(0f, g.gridTop, width.toFloat(), g.gridBottom)
+        if (list.isEmpty()) {
+            barTextPaint.textSize = dp(14f)
+            barTextPaint.color = palette.text
+            barTextPaint.alpha = 150
+            val y = (g.gridTop + g.gridBottom) / 2f - (barTextPaint.ascent() + barTextPaint.descent()) / 2f
+            canvas.drawText(context.getString(R.string.emoji_empty), width / 2f, y, barTextPaint)
+        } else {
+            emojiPaint.textSize = g.cell * 0.58f
+            val base = -(emojiPaint.ascent() + emojiPaint.descent()) / 2f
+            val firstRow = (emojiScroll / g.cell).toInt()
+            val lastRow = ((emojiScroll + (g.gridBottom - g.gridTop)) / g.cell).toInt()
+            for (row in firstRow..lastRow) {
+                for (col in 0 until g.cols) {
+                    val index = row * g.cols + col
+                    if (index >= list.size) break
+                    val cx = g.cell * col + g.cell / 2f
+                    val cy = g.gridTop + row * g.cell - emojiScroll + g.cell / 2f
+                    if (index == emojiPressedIndex) {
+                        fillPaint.color = palette.key
+                        val half = g.cell / 2f - dp(2f)
+                        canvas.drawRoundRect(
+                            RectF(cx - half, cy - half, cx + half, cy + half), radius, radius, fillPaint
+                        )
+                    }
+                    canvas.drawText(list[index], cx, cy + base, emojiPaint)
+                }
+            }
+        }
+        canvas.restore()
+
+        // Baris bawah: ABC, spasi, hapus.
+        val unit = (width - 2 * sidePad) / 10f
+        val weights = floatArrayOf(2f, 6f, 2f)
+        var x = sidePad
+        for (i in 0..2) {
+            val w = weights[i] * unit
+            val face = RectF(x + hInset, g.bottomTop + vInset, x + w - hInset, g.bottomBottom - vInset)
+            drawEmojiFace(canvas, face, emojiPressedBottom == i)
+            when (i) {
+                0 -> drawLabel(canvas, face, "ABC", rowHeight * 0.32f)
+                2 -> drawIcon(canvas, face, R.drawable.ic_kb_backspace)
+            }
+            x += w
+        }
+    }
+
+    private fun drawEmojiFace(canvas: Canvas, face: RectF, pressed: Boolean) {
+        val shadowOffset = dp(1f)
+        fillPaint.color = palette.shadow
+        canvas.drawRoundRect(
+            face.left, face.top + shadowOffset, face.right, face.bottom + shadowOffset,
+            radius, radius, fillPaint
+        )
+        fillPaint.color = if (pressed) palette.keyPressed else palette.key
+        canvas.drawRoundRect(face, radius, radius, fillPaint)
+    }
+
+    /**
+     * Sentuhan di panel emoji (satu jari). Jari yang masih menekan tombol koma saat panel terbuka
+     * diabaikan sampai dilepas, karena sentuhannya dimulai sebelum panel ada.
+     */
+    private fun handleEmojiTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> emojiDown(event.x, event.y)
+            MotionEvent.ACTION_MOVE -> if (emojiTouchActive) emojiMove(event.y)
+            MotionEvent.ACTION_UP -> {
+                if (emojiTouchActive) emojiUp(event.x, event.y)
+                emojiTouchActive = false
+            }
+            MotionEvent.ACTION_CANCEL -> emojiCancel()
+        }
+        return true
+    }
+
+    private fun emojiDown(x: Float, y: Float) {
+        val g = emojiGeo()
+        emojiTouchActive = true
+        emojiDownY = y
+        emojiLastY = y
+        emojiScrolling = false
+        emojiPressedIndex = -1
+        emojiPressedBottom = -1
+        when {
+            y >= g.gridBottom -> {
+                emojiRegion = EMOJI_BOTTOM
+                val b = emojiBottomIndex(x)
+                emojiTarget = b
+                emojiPressedBottom = b
+                feedback(
+                    when (b) {
+                        1 -> KeyType.SPACE
+                        2 -> KeyType.DELETE
+                        else -> KeyType.TO_LETTERS
+                    }
+                )
+                if (b == 2) {
+                    listener?.onKeyDelete()
+                    repeatHandler.removeCallbacks(repeatRunnable)
+                    repeatHandler.postDelayed(repeatRunnable, longPressDelay)
+                }
+            }
+            y < g.gridTop -> {
+                emojiRegion = EMOJI_TAB
+                emojiTarget = emojiTabAt(x)
+            }
+            else -> {
+                emojiRegion = EMOJI_GRID
+                emojiTarget = -1
+                val index = emojiIndexAt(x, y, g)
+                if (index in currentEmojiList().indices) emojiPressedIndex = index
+            }
+        }
+        invalidate()
+    }
+
+    private fun emojiMove(y: Float) {
+        if (emojiRegion != EMOJI_GRID) return
+        if (!emojiScrolling && abs(y - emojiDownY) > touchSlop) {
+            emojiScrolling = true
+            emojiPressedIndex = -1
+        }
+        if (emojiScrolling) {
+            val g = emojiGeo()
+            val limit = emojiScrollMax(g, currentEmojiList().size)
+            emojiScroll = (emojiScroll - (y - emojiLastY)).coerceIn(0f, limit)
+            invalidate()
+        }
+        emojiLastY = y
+    }
+
+    private fun emojiUp(x: Float, y: Float) {
+        val g = emojiGeo()
+        when (emojiRegion) {
+            EMOJI_TAB -> {
+                val tab = emojiTabAt(x)
+                if (tab == emojiTarget && tab != emojiTab) {
+                    emojiTab = tab
+                    emojiScroll = 0f
+                }
+            }
+            EMOJI_BOTTOM -> {
+                val b = emojiBottomIndex(x)
+                when (emojiTarget) {
+                    2 -> repeatHandler.removeCallbacks(repeatRunnable)
+                    0 -> if (b == 0) closeEmoji()
+                    1 -> if (b == 1) listener?.onKeyText(" ")
+                }
+            }
+            EMOJI_GRID -> if (!emojiScrolling) {
+                val list = currentEmojiList()
+                val index = emojiIndexAt(x, y, g)
+                if (index in list.indices) commitEmoji(list[index])
+            }
+        }
+        emojiRegion = EMOJI_NONE
+        emojiTarget = -1
+        emojiPressedIndex = -1
+        emojiPressedBottom = -1
+        invalidate()
+    }
+
+    private fun emojiCancel() {
+        repeatHandler.removeCallbacks(repeatRunnable)
+        emojiTouchActive = false
+        emojiRegion = EMOJI_NONE
+        emojiTarget = -1
+        emojiPressedIndex = -1
+        emojiPressedBottom = -1
+        invalidate()
+    }
+
+    private fun commitEmoji(emoji: String) {
+        feedback(KeyType.CHARACTER)
+        listener?.onKeyText(emoji)
+        // Disimpan sebagai terbaru; tab Terbaru baru berubah saat panel dibuka lagi.
+        val updated = (listOf(emoji) + prefs.emojiRecents.split(' ').filter { it.isNotEmpty() && it != emoji })
+            .take(EMOJI_MAX_RECENTS)
+        prefs.emojiRecents = updated.joinToString(" ")
     }
 
     // ------------------------------------------------------------ Gestur spasi
@@ -930,7 +1279,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun vibrate() {
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
-        v.vibrate(VibrationEffect.createOneShot(VIBRATE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
+        v.vibrate(VibrationEffect.createOneShot(vibrateMs, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
     private fun playSound(type: KeyType) {
@@ -940,7 +1289,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
             KeyType.ENTER -> AudioManager.FX_KEYPRESS_RETURN
             else -> AudioManager.FX_KEYPRESS_STANDARD
         }
-        audioManager?.playSoundEffect(effect, -1f)
+        audioManager?.playSoundEffect(effect, soundGain)
     }
 
     /**
@@ -967,7 +1316,16 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private companion object {
         const val REPEAT_INTERVAL_MS = 45L
         const val DOUBLE_TAP_MS = 350L
-        const val VIBRATE_MS = 18L
+
+        // Panel emoji.
+        const val EMOJI_MIN_ROWS = 5
+        const val EMOJI_MAX_RECENTS = 24
+        const val EMOJI_HINT = "☺"
+        const val EMOJI_RECENT_ICON = "🕘"
+        const val EMOJI_NONE = 0
+        const val EMOJI_TAB = 1
+        const val EMOJI_BOTTOM = 2
+        const val EMOJI_GRID = 3
         const val FONT_PATH = "fonts/AlteHaasGroteskBold.ttf"
 
         // Gestur: jarak geser (dp) sebelum dianggap geseran, dan jarak per karakter.

@@ -1,6 +1,11 @@
 package com.zeku.keyboard
 
+import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.widget.Toast
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +32,12 @@ class PreferencesActivity : AppCompatActivity() {
     // Dua saklar yang saling meniadakan (baris angka dan tekan lama untuk angka).
     private var swNumberRow: MaterialSwitch? = null
     private var swLpNumbers: MaterialSwitch? = null
+
+    // Baris slider yang ikut mati (abu-abu dan tidak bisa digeser) bila saklarnya dimatikan.
+    private var rowVibrate: View? = null
+    private var rowVolume: View? = null
+
+    private val vibrator: Vibrator? by lazy { createVibrator() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +90,10 @@ class PreferencesActivity : AppCompatActivity() {
                 // Tekan lama untuk angka menyala: baris angka otomatis mati.
                 if (it) swNumberRow?.isChecked = false
             }
+        )
+        addSwitch(
+            longPress, R.string.pref_emoji_title, R.string.pref_emoji_desc,
+            { prefs.emoji }, { prefs.emoji = it }
         )
         addSlider(
             longPress, R.string.pref_lp_delay_title, R.string.pref_lp_delay_desc,
@@ -136,12 +151,38 @@ class PreferencesActivity : AppCompatActivity() {
         val feedback = newCard()
         addSwitch(
             feedback, R.string.vibrate_title, R.string.vibrate_desc,
-            { prefs.vibrate }, { prefs.vibrate = it }
+            { prefs.vibrate },
+            {
+                prefs.vibrate = it
+                rowVibrate?.let { row -> setRowEnabled(row, it) }
+            }
         )
+        val vibrateRow = addSlider(
+            feedback, R.string.pref_vibrate_strength_title, R.string.pref_vibrate_strength_desc,
+            Prefs.STRENGTH_MIN, Prefs.STRENGTH_MAX, Prefs.STRENGTH_STEP,
+            { prefs.vibrateStrength }, { prefs.vibrateStrength = it },
+            R.string.ms_fmt,
+            onRelease = { previewVibration(prefs.vibrateStrength) }
+        )
+        rowVibrate = vibrateRow
+        setRowEnabled(vibrateRow, prefs.vibrate)
+
         addSwitch(
             feedback, R.string.sound_title, R.string.sound_desc,
-            { prefs.sound }, { prefs.sound = it }
+            { prefs.sound },
+            {
+                prefs.sound = it
+                rowVolume?.let { row -> setRowEnabled(row, it) }
+            }
         )
+        val volumeRow = addSlider(
+            feedback, R.string.pref_volume_title, R.string.pref_volume_desc,
+            Prefs.VOLUME_MIN, Prefs.VOLUME_MAX, Prefs.VOLUME_STEP,
+            { prefs.soundVolume }, { prefs.soundVolume = it },
+            onRelease = { previewSound(prefs.soundVolume) }
+        )
+        rowVolume = volumeRow
+        setRowEnabled(volumeRow, prefs.sound)
     }
 
     // ------------------------------------------------------------ Pembuat baris
@@ -239,8 +280,9 @@ class PreferencesActivity : AppCompatActivity() {
         step: Int,
         get: () -> Int,
         set: (Int) -> Unit,
-        @StringRes fmt: Int = R.string.height_fmt
-    ) {
+        @StringRes fmt: Int = R.string.height_fmt,
+        onRelease: (() -> Unit)? = null
+    ): View {
         val row = layoutInflater.inflate(R.layout.item_pref_slider, card, false)
         val slider = row.findViewById<Slider>(R.id.prefSlider)
         val valueText = row.findViewById<TextView>(R.id.prefValue)
@@ -262,10 +304,46 @@ class PreferencesActivity : AppCompatActivity() {
                 valueText.text = getString(fmt, v)
             }
         }
+        if (onRelease != null) {
+            slider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) {}
+                override fun onStopTrackingTouch(slider: Slider) {
+                    onRelease()
+                }
+            })
+        }
 
         if (card.childCount > 0) addDivider(card)
         card.addView(row)
+        return row
     }
+
+    /** Matikan atau nyalakan satu baris slider: mati berarti abu-abu dan tidak bisa digeser. */
+    private fun setRowEnabled(row: View, enabled: Boolean) {
+        row.findViewById<Slider>(R.id.prefSlider).isEnabled = enabled
+        row.alpha = if (enabled) 1f else 0.38f
+    }
+
+    /** Getar contoh sepanjang [ms] milidetik, dipakai saat slider dilepas. */
+    private fun previewVibration(ms: Int) {
+        val v = vibrator ?: return
+        if (!v.hasVibrator()) return
+        v.vibrate(VibrationEffect.createOneShot(ms.toLong(), VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+
+    /** Bunyi contoh pada volume [percent] persen, dipakai saat slider dilepas. */
+    private fun previewSound(percent: Int) {
+        val am = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
+        am.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, (percent / 100f).coerceIn(0f, 1f))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun createVibrator(): Vibrator? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+        } else {
+            getSystemService(VIBRATOR_SERVICE) as? Vibrator
+        }
 
     // ---------------------------------------------------------------- Bantuan
 
