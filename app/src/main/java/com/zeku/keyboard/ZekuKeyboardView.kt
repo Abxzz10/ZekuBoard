@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.SparseArray
@@ -38,7 +39,7 @@ enum class EnterKind { ENTER, SEARCH, SEND, NEXT, DONE }
 private class KeyBox(val key: Key, val cell: RectF, val face: RectF)
 
 /** Ukuran panel emoji: baris tab di atas, kisi di tengah, baris tombol bawah. */
-private class EmojiGeo(
+private class PanelGeo(
     val tabsTop: Float,
     val tabsBottom: Float,
     val gridTop: Float,
@@ -167,15 +168,32 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var emojiScroll = 0f
     private var emojiLists: List<List<String>>? = null
     private var emojiRecents: List<String> = emptyList()
-    private var emojiTouchActive = false
-    private var emojiRegion = EMOJI_NONE
-    private var emojiTarget = -1
-    private var emojiDownY = 0f
-    private var emojiLastY = 0f
-    private var emojiScrolling = false
+    private var panelTouchActive = false
+    private var panelRegion = PANEL_NONE
+    private var panelTarget = -1
+    private var panelDownY = 0f
+    private var panelLastY = 0f
+    private var panelScrolling = false
     private var emojiPressedIndex = -1
-    private var emojiPressedBottom = -1
+    private var panelPressedBottom = -1
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
+    // Papan klip (alat pertama di bilah Tools): panel daftar teks yang disalin.
+    private var clipOpen = false
+    private var clipItems: List<ClipItem> = emptyList()
+    private var clipScroll = 0f
+    private var clipSelecting = false
+    private val clipSelected = HashSet<Long>()
+    private var clipDownIndex = -1
+    private var clipDownPart = 0
+    private var clipHeaderTarget = -1
+    private var clipLongFired = false
+    private val clipLpRunnable = Runnable { clipLongPress() }
+
+    // Ketukan pada tombol alat di bilah Tools.
+    private var toolPointer = -1
+    private var toolDownSlot = -1
+    private var toolPressed = false
 
     /** Baris tombol untuk layar yang sedang tampil. */
     private var rows: List<List<Key>> = emptyList()
@@ -229,6 +247,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
         typeface = keyTypeface
     }
     private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.LEFT
+        typeface = keyTypeface
+    }
+    private val clipTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val icons = HashMap<Int, Drawable?>()
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -379,7 +402,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         updateMetrics()
         // Panel emoji butuh paling sedikit 5 baris tinggi supaya kisinya cukup lega.
-        val rowCount = if (emojiOpen) max(rows.size, EMOJI_MIN_ROWS) else rows.size
+        val rowCount = if (emojiOpen || clipOpen) max(rows.size, PANEL_MIN_ROWS) else rows.size
         val h = (rowHeight * rowCount + topTotal + bottomPad).toInt()
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), h)
     }
@@ -434,6 +457,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
             drawEmojiPanel(canvas)
             return
         }
+        if (clipOpen) {
+            drawClipboardPanel(canvas)
+            return
+        }
         drawTopBars(canvas)
         for (box in boxes) drawKey(canvas, box)
         previewBox?.let { drawPreview(canvas, it) }
@@ -443,7 +470,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun drawTopBars(canvas: Canvas) {
         if (barH <= 0f) return
         when (activeTopBar()) {
-            TopBarMode.TOOLS -> drawToolsPlaceholder(canvas, 0f, barH)
+            TopBarMode.TOOLS -> drawToolsBar(canvas, 0f, barH)
             TopBarMode.SUGGEST -> drawSuggestionBar(canvas, 0f, barH)
             null -> Unit
         }
@@ -457,20 +484,47 @@ class ZekuKeyboardView(context: Context) : View(context) {
         else -> null
     }
 
-    /** Deretan kotak kosong, tempat ikon alat nanti. */
-    private fun drawToolsPlaceholder(canvas: Canvas, top: Float, bottom: Float) {
+    /** Kotak ke-[index] di bilah Tools, atau null bila tidak muat. */
+    private fun toolSlotRect(index: Int, top: Float, bottom: Float): RectF? {
         val margin = dp(8f)
         val gap = dp(10f)
         val side = (bottom - top) - dp(12f)
-        if (side <= 0f) return
+        if (side <= 0f) return null
         val fit = ((width - 2 * margin + gap) / (side + gap)).toInt()
-        val count = fit.coerceIn(0, TOOLS_PLACEHOLDER_COUNT)
-        fillPaint.color = (palette.key and 0x00FFFFFF) or (0x99 shl 24)
-        var x = margin
-        for (i in 0 until count) {
-            val rect = RectF(x, top + dp(6f), x + side, bottom - dp(6f))
-            canvas.drawRoundRect(rect, radius, radius, fillPaint)
-            x += side + gap
+        if (index >= fit.coerceIn(0, TOOLS_PLACEHOLDER_COUNT)) return null
+        val left = margin + index * (side + gap)
+        return RectF(left, top + dp(6f), left + side, bottom - dp(6f))
+    }
+
+    /**
+     * Bilah Tools. Kotak pertama adalah papan klip (bisa diketuk); kotak lain masih kosong,
+     * tempat alat berikutnya.
+     */
+    private fun drawToolsBar(canvas: Canvas, top: Float, bottom: Float) {
+        for (i in 0 until TOOLS_PLACEHOLDER_COUNT) {
+            val rect = toolSlotRect(i, top, bottom) ?: break
+            if (i == 0) {
+                fillPaint.color = if (toolPressed) palette.keyPressed else palette.key
+                canvas.drawRoundRect(rect, radius, radius, fillPaint)
+                drawIconAt(canvas, rect.centerX(), rect.centerY(), R.drawable.ic_kb_clipboard, rect.width() * 0.56f)
+            } else {
+                fillPaint.color = (palette.key and 0x00FFFFFF) or (0x66 shl 24)
+                canvas.drawRoundRect(rect, radius, radius, fillPaint)
+            }
+        }
+    }
+
+    /** Nomor kotak alat di titik sentuh (hanya yang bisa diketuk), atau -1. */
+    private fun toolSlotAt(x: Float, y: Float): Int {
+        if (barH <= 0f || activeTopBar() != TopBarMode.TOOLS || y < 0f || y >= barH) return -1
+        val rect = toolSlotRect(0, 0f, barH) ?: return -1
+        val gap = dp(10f)
+        return if (x >= rect.left - gap / 2f && x <= rect.right + gap / 2f) 0 else -1
+    }
+
+    private fun openTool(slot: Int) {
+        when (slot) {
+            0 -> openClipboard()
         }
     }
 
@@ -635,6 +689,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (emojiOpen) return handleEmojiTouch(event)
+        if (clipOpen) return handleClipboardTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelTouches()
@@ -679,13 +734,23 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun handleDown(id: Int, x: Float, y: Float) {
         // Sentuhan di bilah atas: hanya kotak saran yang bereaksi, tidak pernah tombol huruf.
         if (y < topExtra) {
-            if (barPointer < 0) {
-                val cell = barCellAt(x, y)
-                if (cell >= 0) {
-                    barPointer = id
-                    barDownCell = cell
-                    barCell = cell
-                    invalidate()
+            if (barPointer < 0 && toolPointer < 0) {
+                if (activeTopBar() == TopBarMode.TOOLS) {
+                    val slot = toolSlotAt(x, y)
+                    if (slot >= 0) {
+                        toolPointer = id
+                        toolDownSlot = slot
+                        toolPressed = true
+                        invalidate()
+                    }
+                } else {
+                    val cell = barCellAt(x, y)
+                    if (cell >= 0) {
+                        barPointer = id
+                        barDownCell = cell
+                        barCell = cell
+                        invalidate()
+                    }
                 }
             }
             return
@@ -715,6 +780,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleMove(id: Int, x: Float, y: Float) {
+        if (id == toolPointer) {
+            val inside = toolSlotAt(x, y) == toolDownSlot
+            if (inside != toolPressed) {
+                toolPressed = inside
+                invalidate()
+            }
+            return
+        }
         if (id == barPointer) {
             // Jari keluar dari kotak yang ditekan: batal, tidak ada saran yang dimasukkan.
             val next = if (barCellAt(x, y) == barDownCell) barDownCell else -1
@@ -747,6 +820,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleUp(id: Int) {
+        if (id == toolPointer) {
+            val fire = toolPressed
+            val slot = toolDownSlot
+            toolPointer = -1
+            toolDownSlot = -1
+            toolPressed = false
+            if (fire) {
+                feedback(KeyType.CHARACTER)
+                openTool(slot)
+            }
+            invalidate()
+            return
+        }
         if (id == barPointer) {
             val cell = barCell
             barPointer = -1
@@ -810,6 +896,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
         barPointer = -1
         barDownCell = -1
         barCell = -1
+        toolPointer = -1
+        toolDownSlot = -1
+        toolPressed = false
         previewBox = null
         previewPointer = -1
     }
@@ -897,6 +986,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun openEmoji() {
         if (emojiOpen) return
+        closeClipboard()
         cancelTouches()
         if (emojiLists == null) {
             // Buang emoji yang tidak punya gambar di font perangkat ini.
@@ -906,8 +996,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
         emojiTab = if (emojiRecents.isNotEmpty()) 0 else 1
         emojiScroll = 0f
         emojiPressedIndex = -1
-        emojiPressedBottom = -1
-        emojiTouchActive = false
+        panelPressedBottom = -1
+        panelTouchActive = false
         emojiOpen = true
         requestLayout()
         invalidate()
@@ -917,8 +1007,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     fun closeEmoji() {
         if (!emojiOpen) return
         emojiOpen = false
-        emojiTouchActive = false
-        repeatHandler.removeCallbacks(repeatRunnable)
+        panelCancel()
         requestLayout()
         invalidate()
     }
@@ -928,7 +1017,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun emojiTabCount(): Int = EmojiData.categories.size + 1
 
-    private fun emojiGeo(): EmojiGeo {
+    private fun panelGeo(): PanelGeo {
         val tabsTop = dp(4f)
         val tabsBottom = tabsTop + rowHeight * 0.8f
         val bottomBottom = height - bottomPad
@@ -936,13 +1025,13 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val gridTop = tabsBottom + dp(2f)
         val gridBottom = bottomTop - dp(2f)
         val cols = max(6, (width / dp(46f)).toInt())
-        return EmojiGeo(
+        return PanelGeo(
             tabsTop, tabsBottom, gridTop, gridBottom, bottomTop, bottomBottom,
             cols, width / cols.toFloat()
         )
     }
 
-    private fun emojiScrollMax(g: EmojiGeo, count: Int): Float {
+    private fun emojiScrollMax(g: PanelGeo, count: Int): Float {
         val content = ceil(count / g.cols.toFloat()) * g.cell
         return max(0f, content - (g.gridBottom - g.gridTop))
     }
@@ -951,7 +1040,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         (x / (width / emojiTabCount().toFloat())).toInt().coerceIn(0, emojiTabCount() - 1)
 
     /** Tombol bawah: 0 = ABC, 1 = spasi, 2 = hapus (lebar 2 : 6 : 2). */
-    private fun emojiBottomIndex(x: Float): Int {
+    private fun panelBottomIndex(x: Float): Int {
         val unit = (width - 2 * sidePad) / 10f
         return when {
             x < sidePad + 2 * unit -> 0
@@ -960,7 +1049,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         }
     }
 
-    private fun emojiIndexAt(x: Float, y: Float, g: EmojiGeo): Int {
+    private fun emojiIndexAt(x: Float, y: Float, g: PanelGeo): Int {
         val col = (x / g.cell).toInt()
         if (col !in 0 until g.cols) return -1
         val row = ((y - g.gridTop + emojiScroll) / g.cell).toInt()
@@ -968,7 +1057,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun drawEmojiPanel(canvas: Canvas) {
-        val g = emojiGeo()
+        val g = panelGeo()
 
         // Tab kategori.
         val tabW = width / emojiTabCount().toFloat()
@@ -1019,14 +1108,18 @@ class ZekuKeyboardView(context: Context) : View(context) {
         }
         canvas.restore()
 
-        // Baris bawah: ABC, spasi, hapus.
+        drawPanelBottomRow(canvas, g)
+    }
+
+    /** Baris bawah yang sama di panel emoji dan papan klip: ABC, spasi, hapus. */
+    private fun drawPanelBottomRow(canvas: Canvas, g: PanelGeo) {
         val unit = (width - 2 * sidePad) / 10f
         val weights = floatArrayOf(2f, 6f, 2f)
         var x = sidePad
         for (i in 0..2) {
             val w = weights[i] * unit
             val face = RectF(x + hInset, g.bottomTop + vInset, x + w - hInset, g.bottomBottom - vInset)
-            drawEmojiFace(canvas, face, emojiPressedBottom == i)
+            drawPanelFace(canvas, face, panelPressedBottom == i)
             when (i) {
                 0 -> drawLabel(canvas, face, "ABC", rowHeight * 0.32f)
                 2 -> drawIcon(canvas, face, R.drawable.ic_kb_backspace)
@@ -1035,7 +1128,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         }
     }
 
-    private fun drawEmojiFace(canvas: Canvas, face: RectF, pressed: Boolean) {
+    private fun drawPanelFace(canvas: Canvas, face: RectF, pressed: Boolean) {
         val shadowOffset = dp(1f)
         fillPaint.color = palette.shadow
         canvas.drawRoundRect(
@@ -1046,6 +1139,74 @@ class ZekuKeyboardView(context: Context) : View(context) {
         canvas.drawRoundRect(face, radius, radius, fillPaint)
     }
 
+    // ------------------------------------------------- Baris bawah panel (dipakai bersama)
+
+    /** Tombol bawah ditekan: ABC, spasi (bisa digeser untuk memindah kursor), atau hapus. */
+    private fun panelBottomDown(x: Float) {
+        val b = panelBottomIndex(x)
+        panelTarget = b
+        panelPressedBottom = b
+        feedback(
+            when (b) {
+                1 -> KeyType.SPACE
+                2 -> KeyType.DELETE
+                else -> KeyType.TO_LETTERS
+            }
+        )
+        when (b) {
+            1 -> {
+                // Spasi di panel punya gestur geser kursor yang sama dengan spasi di keyboard.
+                spaceStartX = x
+                spaceApplied = 0
+                spaceActive = false
+            }
+            2 -> {
+                listener?.onKeyDelete()
+                repeatHandler.removeCallbacks(repeatRunnable)
+                repeatHandler.postDelayed(repeatRunnable, longPressDelay)
+            }
+        }
+    }
+
+    private fun panelBottomMove(x: Float) {
+        if (panelTarget == 1 && gestureSpaceOn) moveSpace(x)
+    }
+
+    private fun panelBottomUp(x: Float, onBack: () -> Unit) {
+        val b = panelBottomIndex(x)
+        when (panelTarget) {
+            2 -> repeatHandler.removeCallbacks(repeatRunnable)
+            0 -> if (b == 0) onBack()
+            1 -> {
+                // Hanya diketuk tanpa geser: masukkan satu spasi seperti biasa.
+                val moved = spaceActive
+                resetSpaceGesture()
+                if (!moved && b == 1) listener?.onKeyText(" ")
+            }
+        }
+    }
+
+    /** Bersihkan status sentuhan panel (emoji maupun papan klip). */
+    private fun panelReset() {
+        panelRegion = PANEL_NONE
+        panelTarget = -1
+        panelPressedBottom = -1
+        emojiPressedIndex = -1
+        clipDownIndex = -1
+        clipHeaderTarget = -1
+        invalidate()
+    }
+
+    private fun panelCancel() {
+        repeatHandler.removeCallbacks(repeatRunnable)
+        repeatHandler.removeCallbacks(clipLpRunnable)
+        resetSpaceGesture()
+        panelTouchActive = false
+        panelReset()
+    }
+
+    // ------------------------------------------------------------ Sentuhan panel emoji
+
     /**
      * Sentuhan di panel emoji (satu jari). Jari yang masih menekan tombol koma saat panel terbuka
      * diabaikan sampai dilepas, karena sentuhannya dimulai sebelum panel ada.
@@ -1053,50 +1214,36 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun handleEmojiTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> emojiDown(event.x, event.y)
-            MotionEvent.ACTION_MOVE -> if (emojiTouchActive) emojiMove(event.y)
+            MotionEvent.ACTION_MOVE -> if (panelTouchActive) emojiMove(event.x, event.y)
             MotionEvent.ACTION_UP -> {
-                if (emojiTouchActive) emojiUp(event.x, event.y)
-                emojiTouchActive = false
+                if (panelTouchActive) emojiUp(event.x, event.y)
+                panelTouchActive = false
             }
-            MotionEvent.ACTION_CANCEL -> emojiCancel()
+            MotionEvent.ACTION_CANCEL -> panelCancel()
         }
         return true
     }
 
     private fun emojiDown(x: Float, y: Float) {
-        val g = emojiGeo()
-        emojiTouchActive = true
-        emojiDownY = y
-        emojiLastY = y
-        emojiScrolling = false
+        val g = panelGeo()
+        panelTouchActive = true
+        panelDownY = y
+        panelLastY = y
+        panelScrolling = false
         emojiPressedIndex = -1
-        emojiPressedBottom = -1
+        panelPressedBottom = -1
         when {
             y >= g.gridBottom -> {
-                emojiRegion = EMOJI_BOTTOM
-                val b = emojiBottomIndex(x)
-                emojiTarget = b
-                emojiPressedBottom = b
-                feedback(
-                    when (b) {
-                        1 -> KeyType.SPACE
-                        2 -> KeyType.DELETE
-                        else -> KeyType.TO_LETTERS
-                    }
-                )
-                if (b == 2) {
-                    listener?.onKeyDelete()
-                    repeatHandler.removeCallbacks(repeatRunnable)
-                    repeatHandler.postDelayed(repeatRunnable, longPressDelay)
-                }
+                panelRegion = PANEL_BOTTOM
+                panelBottomDown(x)
             }
             y < g.gridTop -> {
-                emojiRegion = EMOJI_TAB
-                emojiTarget = emojiTabAt(x)
+                panelRegion = PANEL_TAB
+                panelTarget = emojiTabAt(x)
             }
             else -> {
-                emojiRegion = EMOJI_GRID
-                emojiTarget = -1
+                panelRegion = PANEL_GRID
+                panelTarget = -1
                 val index = emojiIndexAt(x, y, g)
                 if (index in currentEmojiList().indices) emojiPressedIndex = index
             }
@@ -1104,60 +1251,43 @@ class ZekuKeyboardView(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun emojiMove(y: Float) {
-        if (emojiRegion != EMOJI_GRID) return
-        if (!emojiScrolling && abs(y - emojiDownY) > touchSlop) {
-            emojiScrolling = true
-            emojiPressedIndex = -1
+    private fun emojiMove(x: Float, y: Float) {
+        when (panelRegion) {
+            PANEL_BOTTOM -> panelBottomMove(x)
+            PANEL_GRID -> {
+                if (!panelScrolling && abs(y - panelDownY) > touchSlop) {
+                    panelScrolling = true
+                    emojiPressedIndex = -1
+                }
+                if (panelScrolling) {
+                    val g = panelGeo()
+                    val limit = emojiScrollMax(g, currentEmojiList().size)
+                    emojiScroll = (emojiScroll - (y - panelLastY)).coerceIn(0f, limit)
+                    invalidate()
+                }
+                panelLastY = y
+            }
         }
-        if (emojiScrolling) {
-            val g = emojiGeo()
-            val limit = emojiScrollMax(g, currentEmojiList().size)
-            emojiScroll = (emojiScroll - (y - emojiLastY)).coerceIn(0f, limit)
-            invalidate()
-        }
-        emojiLastY = y
     }
 
     private fun emojiUp(x: Float, y: Float) {
-        val g = emojiGeo()
-        when (emojiRegion) {
-            EMOJI_TAB -> {
+        val g = panelGeo()
+        when (panelRegion) {
+            PANEL_TAB -> {
                 val tab = emojiTabAt(x)
-                if (tab == emojiTarget && tab != emojiTab) {
+                if (tab == panelTarget && tab != emojiTab) {
                     emojiTab = tab
                     emojiScroll = 0f
                 }
             }
-            EMOJI_BOTTOM -> {
-                val b = emojiBottomIndex(x)
-                when (emojiTarget) {
-                    2 -> repeatHandler.removeCallbacks(repeatRunnable)
-                    0 -> if (b == 0) closeEmoji()
-                    1 -> if (b == 1) listener?.onKeyText(" ")
-                }
-            }
-            EMOJI_GRID -> if (!emojiScrolling) {
+            PANEL_BOTTOM -> panelBottomUp(x) { closeEmoji() }
+            PANEL_GRID -> if (!panelScrolling) {
                 val list = currentEmojiList()
                 val index = emojiIndexAt(x, y, g)
                 if (index in list.indices) commitEmoji(list[index])
             }
         }
-        emojiRegion = EMOJI_NONE
-        emojiTarget = -1
-        emojiPressedIndex = -1
-        emojiPressedBottom = -1
-        invalidate()
-    }
-
-    private fun emojiCancel() {
-        repeatHandler.removeCallbacks(repeatRunnable)
-        emojiTouchActive = false
-        emojiRegion = EMOJI_NONE
-        emojiTarget = -1
-        emojiPressedIndex = -1
-        emojiPressedBottom = -1
-        invalidate()
+        if (emojiOpen) panelReset()
     }
 
     private fun commitEmoji(emoji: String) {
@@ -1167,6 +1297,360 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val updated = (listOf(emoji) + prefs.emojiRecents.split(' ').filter { it.isNotEmpty() && it != emoji })
             .take(EMOJI_MAX_RECENTS)
         prefs.emojiRecents = updated.joinToString(" ")
+    }
+
+    // ---------------------------------------------------------------- Papan klip
+
+    private fun openClipboard() {
+        if (clipOpen) return
+        closeEmoji()
+        cancelTouches()
+        clipItems = ClipboardStore.items()
+        clipScroll = 0f
+        clipSelecting = false
+        clipSelected.clear()
+        panelTouchActive = false
+        clipOpen = true
+        requestLayout()
+        invalidate()
+    }
+
+    /** Tutup papan klip dan kembali ke tombol. */
+    fun closeClipboard() {
+        if (!clipOpen) return
+        clipOpen = false
+        clipSelecting = false
+        clipSelected.clear()
+        panelCancel()
+        requestLayout()
+        invalidate()
+    }
+
+    private fun clipCardHeight(): Float = max(dp(52f), rowHeight * 1.05f)
+    private fun clipGap(): Float = dp(6f)
+    private fun clipMargin(): Float = dp(8f)
+    private fun clipButtonWidth(): Float = dp(40f)
+
+    private fun clipScrollMax(g: PanelGeo): Float {
+        val pitch = clipCardHeight() + clipGap()
+        return max(0f, clipItems.size * pitch + clipGap() - (g.gridBottom - g.gridTop))
+    }
+
+    private fun clipItemTop(index: Int, g: PanelGeo): Float =
+        g.gridTop + clipGap() + index * (clipCardHeight() + clipGap()) - clipScroll
+
+    /** Nomor kartu di ketinggian [y], atau -1 bila di sela antar kartu. */
+    private fun clipItemAt(y: Float, g: PanelGeo): Int {
+        val pitch = clipCardHeight() + clipGap()
+        val rel = y - g.gridTop - clipGap() + clipScroll
+        if (rel < 0f) return -1
+        val index = (rel / pitch).toInt()
+        return if (rel - index * pitch <= clipCardHeight() && index < clipItems.size) index else -1
+    }
+
+    /** Bagian kartu yang disentuh: 0 = kartu, 1 = tombol sematkan, 2 = tombol hapus. */
+    private fun clipPartAt(x: Float): Int {
+        if (clipSelecting) return 0
+        val right = width - clipMargin()
+        return when {
+            x >= right - clipButtonWidth() -> 2
+            x >= right - 2 * clipButtonWidth() -> 1
+            else -> 0
+        }
+    }
+
+    /** Tombol di judul saat memilih: 0 = sematkan, 1 = hapus, 2 = batal. Dihitung dari kanan. */
+    private fun clipHeaderRect(index: Int, g: PanelGeo): RectF {
+        val size = g.tabsBottom - g.tabsTop
+        val gap = dp(6f)
+        val right = width - clipMargin() - (2 - index) * (size + gap)
+        return RectF(right - size, g.tabsTop, right, g.tabsBottom)
+    }
+
+    private fun clipHeaderButtonAt(x: Float, g: PanelGeo): Int {
+        for (i in 0..2) {
+            val r = clipHeaderRect(i, g)
+            if (x >= r.left - dp(3f) && x <= r.right + dp(3f)) return i
+        }
+        return -1
+    }
+
+    private fun drawClipboardPanel(canvas: Canvas) {
+        val g = panelGeo()
+        val margin = clipMargin()
+
+        // Judul, atau jumlah yang dipilih beserta tombol sematkan, hapus, batal.
+        headerPaint.textSize = (g.tabsBottom - g.tabsTop) * 0.46f
+        headerPaint.color = palette.text
+        val titleY = (g.tabsTop + g.tabsBottom) / 2f - (headerPaint.ascent() + headerPaint.descent()) / 2f
+        val title = if (clipSelecting) {
+            context.getString(R.string.clip_selected_fmt, clipSelected.size)
+        } else {
+            context.getString(R.string.clip_title)
+        }
+        canvas.drawText(title, margin + dp(4f), titleY, headerPaint)
+        if (clipSelecting) {
+            val icons = intArrayOf(R.drawable.ic_kb_pin, R.drawable.ic_kb_trash, R.drawable.ic_kb_close)
+            for (i in 0..2) {
+                val r = clipHeaderRect(i, g)
+                drawPanelFace(canvas, r, clipHeaderTarget == i && panelTouchActive)
+                drawIconAt(canvas, r.centerX(), r.centerY(), icons[i], r.width() * 0.5f)
+            }
+        }
+
+        // Daftar kartu (bisa digulir).
+        canvas.save()
+        canvas.clipRect(0f, g.gridTop, width.toFloat(), g.gridBottom)
+        if (clipItems.isEmpty()) {
+            clipTextPaint.textSize = dp(14f)
+            clipTextPaint.color = palette.text
+            clipTextPaint.alpha = 150
+            val w = (width - 2 * dp(32f)).toInt()
+            val text = context.getString(R.string.clip_empty)
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, clipTextPaint, w)
+                .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
+                .build()
+            canvas.translate(dp(32f), (g.gridTop + g.gridBottom) / 2f - layout.height / 2f)
+            layout.draw(canvas)
+        } else {
+            val cardH = clipCardHeight()
+            val btnW = clipButtonWidth()
+            for (i in clipItems.indices) {
+                val top = clipItemTop(i, g)
+                if (top + cardH < g.gridTop || top > g.gridBottom) continue
+                drawClipCard(canvas, clipItems[i], i, top, cardH, margin, btnW)
+            }
+        }
+        canvas.restore()
+
+        drawPanelBottomRow(canvas, g)
+    }
+
+    private fun drawClipCard(
+        canvas: Canvas, item: ClipItem, index: Int,
+        top: Float, cardH: Float, margin: Float, btnW: Float
+    ) {
+        val rect = RectF(margin, top, width - margin, top + cardH)
+        val selected = item.id in clipSelected
+        val pressed = panelTouchActive && clipDownIndex == index && clipDownPart == 0 && !panelScrolling
+        fillPaint.color = if (selected || pressed) palette.keyPressed else palette.key
+        canvas.drawRoundRect(rect, radius, radius, fillPaint)
+        if (selected) {
+            strokePaint.color = palette.text
+            strokePaint.strokeWidth = dp(1.5f)
+            canvas.drawRoundRect(rect, radius, radius, strokePaint)
+        }
+
+        // Tanda sematan di kiri teks.
+        var textLeft = rect.left + dp(12f)
+        if (item.pinned) {
+            drawIconAt(canvas, textLeft + dp(7f), rect.centerY(), R.drawable.ic_kb_pin, dp(14f))
+            textLeft += dp(20f)
+        }
+        val textRight = rect.right - if (clipSelecting) dp(44f) else 2 * btnW + dp(4f)
+        val textWidth = (textRight - textLeft).toInt()
+        if (textWidth > 0) {
+            clipTextPaint.textSize = dp(14f)
+            clipTextPaint.color = palette.text
+            clipTextPaint.alpha = 255
+            val layout = StaticLayout.Builder.obtain(item.preview, 0, item.preview.length, clipTextPaint, textWidth)
+                .setMaxLines(2)
+                .setEllipsize(TextUtils.TruncateAt.END)
+                .setIncludePad(false)
+                .build()
+            canvas.save()
+            canvas.translate(textLeft, rect.centerY() - layout.height / 2f)
+            layout.draw(canvas)
+            canvas.restore()
+        }
+
+        if (clipSelecting) {
+            // Kotak pilih di kanan: bulat kosong, atau bulat terisi dengan centang.
+            val cx = rect.right - dp(22f)
+            val cy = rect.centerY()
+            val r = dp(10f)
+            if (selected) {
+                fillPaint.color = palette.text
+                canvas.drawCircle(cx, cy, r, fillPaint)
+                val d = icon(R.drawable.ic_kb_check)
+                if (d != null) {
+                    d.setTint(palette.key)
+                    val half = (r * 0.7f).toInt()
+                    d.setBounds(cx.toInt() - half, cy.toInt() - half, cx.toInt() + half, cy.toInt() + half)
+                    d.draw(canvas)
+                }
+            } else {
+                strokePaint.color = palette.text
+                strokePaint.alpha = 140
+                strokePaint.strokeWidth = dp(1.5f)
+                canvas.drawCircle(cx, cy, r, strokePaint)
+                strokePaint.alpha = 255
+            }
+        } else {
+            // Tombol sematkan (terang bila sedang disematkan) dan tombol hapus.
+            val pinX = rect.right - btnW * 1.5f
+            val delX = rect.right - btnW * 0.5f
+            val pinHot = panelTouchActive && clipDownIndex == index && clipDownPart == 1 && !panelScrolling
+            val delHot = panelTouchActive && clipDownIndex == index && clipDownPart == 2 && !panelScrolling
+            drawIconAt(canvas, pinX, rect.centerY(), R.drawable.ic_kb_pin, dp(20f), if (item.pinned || pinHot) 255 else 110)
+            drawIconAt(canvas, delX, rect.centerY(), R.drawable.ic_kb_trash, dp(20f), if (delHot) 255 else 170)
+        }
+    }
+
+    /** Ikon berukuran [size] piksel yang berpusat di ([cx], [cy]), dengan warna teks keyboard. */
+    private fun drawIconAt(canvas: Canvas, cx: Float, cy: Float, res: Int, size: Float, alpha: Int = 255) {
+        val d = icon(res) ?: return
+        val half = (size / 2f).toInt()
+        d.setTint(palette.text)
+        d.alpha = alpha
+        d.setBounds(cx.toInt() - half, cy.toInt() - half, cx.toInt() + half, cy.toInt() + half)
+        d.draw(canvas)
+        d.alpha = 255
+    }
+
+    private fun handleClipboardTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> clipDown(event.x, event.y)
+            MotionEvent.ACTION_MOVE -> if (panelTouchActive) clipMove(event.x, event.y)
+            MotionEvent.ACTION_UP -> {
+                if (panelTouchActive) clipUp(event.x, event.y)
+                panelTouchActive = false
+            }
+            MotionEvent.ACTION_CANCEL -> panelCancel()
+        }
+        return true
+    }
+
+    private fun clipDown(x: Float, y: Float) {
+        val g = panelGeo()
+        panelTouchActive = true
+        panelDownY = y
+        panelLastY = y
+        panelScrolling = false
+        panelPressedBottom = -1
+        clipLongFired = false
+        clipDownIndex = -1
+        clipHeaderTarget = -1
+        repeatHandler.removeCallbacks(clipLpRunnable)
+        when {
+            y >= g.gridBottom -> {
+                panelRegion = PANEL_BOTTOM
+                panelBottomDown(x)
+            }
+            y < g.gridTop -> {
+                panelRegion = PANEL_TAB
+                if (clipSelecting) clipHeaderTarget = clipHeaderButtonAt(x, g)
+            }
+            else -> {
+                panelRegion = PANEL_GRID
+                val index = clipItemAt(y, g)
+                if (index >= 0) {
+                    clipDownIndex = index
+                    clipDownPart = clipPartAt(x)
+                    // Tahan lama (sepanjang Durasi tekan lama) untuk mulai memilih beberapa teks.
+                    if (!clipSelecting) repeatHandler.postDelayed(clipLpRunnable, longPressDelay)
+                }
+            }
+        }
+        invalidate()
+    }
+
+    private fun clipMove(x: Float, y: Float) {
+        when (panelRegion) {
+            PANEL_BOTTOM -> panelBottomMove(x)
+            PANEL_GRID -> {
+                if (!panelScrolling && abs(y - panelDownY) > touchSlop) {
+                    panelScrolling = true
+                    repeatHandler.removeCallbacks(clipLpRunnable)
+                }
+                if (panelScrolling) {
+                    val g = panelGeo()
+                    clipScroll = (clipScroll - (y - panelLastY)).coerceIn(0f, clipScrollMax(g))
+                    invalidate()
+                }
+                panelLastY = y
+            }
+        }
+    }
+
+    private fun clipLongPress() {
+        if (!clipOpen || !panelTouchActive || panelRegion != PANEL_GRID || panelScrolling) return
+        val item = clipItems.getOrNull(clipDownIndex) ?: return
+        clipLongFired = true
+        if (vibrateOn) vibrate()
+        clipSelecting = true
+        clipSelected.clear()
+        clipSelected.add(item.id)
+        invalidate()
+    }
+
+    private fun clipUp(x: Float, y: Float) {
+        repeatHandler.removeCallbacks(clipLpRunnable)
+        val g = panelGeo()
+        when (panelRegion) {
+            PANEL_TAB -> {
+                if (clipSelecting && clipHeaderTarget >= 0 && clipHeaderButtonAt(x, g) == clipHeaderTarget) {
+                    feedback(KeyType.CHARACTER)
+                    clipHeaderAction(clipHeaderTarget)
+                }
+            }
+            PANEL_BOTTOM -> panelBottomUp(x) { closeClipboard() }
+            PANEL_GRID -> {
+                val item = clipItems.getOrNull(clipDownIndex)
+                if (item != null && !panelScrolling && !clipLongFired && clipItemAt(y, g) == clipDownIndex) {
+                    clipItemTapped(item, clipDownPart)
+                }
+            }
+        }
+        if (clipOpen) panelReset()
+    }
+
+    private fun clipItemTapped(item: ClipItem, part: Int) {
+        feedback(KeyType.CHARACTER)
+        if (clipSelecting) {
+            // Mode memilih: ketuk kartu untuk memilih atau melepas pilihan.
+            if (!clipSelected.add(item.id)) clipSelected.remove(item.id)
+            if (clipSelected.isEmpty()) clipSelecting = false
+            invalidate()
+            return
+        }
+        when (part) {
+            1 -> {
+                ClipboardStore.setPinned(setOf(item.id), !item.pinned)
+                refreshClipItems()
+            }
+            2 -> {
+                ClipboardStore.delete(setOf(item.id))
+                refreshClipItems()
+            }
+            else -> {
+                // Ketuk kartu: tempel teksnya, lalu kembali ke keyboard.
+                listener?.onKeyText(item.text)
+                closeClipboard()
+            }
+        }
+    }
+
+    /** Aksi tombol di judul saat memilih: 0 = sematkan atau lepas sematan, 1 = hapus, 2 = batal. */
+    private fun clipHeaderAction(button: Int) {
+        val ids = HashSet(clipSelected)
+        when (button) {
+            0 -> {
+                // Ada yang belum disematkan: sematkan semuanya. Semua sudah disematkan: lepas.
+                val pin = clipItems.any { it.id in ids && !it.pinned }
+                ClipboardStore.setPinned(ids, pin)
+            }
+            1 -> ClipboardStore.delete(ids)
+        }
+        clipSelecting = false
+        clipSelected.clear()
+        refreshClipItems()
+    }
+
+    private fun refreshClipItems() {
+        clipItems = ClipboardStore.items()
+        clipScroll = clipScroll.coerceIn(0f, clipScrollMax(panelGeo()))
+        invalidate()
     }
 
     // ------------------------------------------------------------ Gestur spasi
@@ -1318,14 +1802,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val DOUBLE_TAP_MS = 350L
 
         // Panel emoji.
-        const val EMOJI_MIN_ROWS = 5
+        const val PANEL_MIN_ROWS = 5
         const val EMOJI_MAX_RECENTS = 24
         const val EMOJI_HINT = "☺"
         const val EMOJI_RECENT_ICON = "🕘"
-        const val EMOJI_NONE = 0
-        const val EMOJI_TAB = 1
-        const val EMOJI_BOTTOM = 2
-        const val EMOJI_GRID = 3
+        const val PANEL_NONE = 0
+        const val PANEL_TAB = 1
+        const val PANEL_BOTTOM = 2
+        const val PANEL_GRID = 3
         const val FONT_PATH = "fonts/AlteHaasGroteskBold.ttf"
 
         // Gestur: jarak geser (dp) sebelum dianggap geseran, dan jarak per karakter.

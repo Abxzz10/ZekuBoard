@@ -134,6 +134,17 @@ class PreferencesActivity : AppCompatActivity() {
             suggestions, R.string.pref_learn_clear_title, R.string.pref_learn_clear_desc
         ) { confirmClearLearned() }
 
+        // Papan klip: riwayat teks yang disalin (datanya hanya di perangkat)
+        addSection(R.string.sec_clipboard)
+        val clipboard = newCard()
+        addSwitch(
+            clipboard, R.string.pref_clip_title, R.string.pref_clip_desc,
+            { prefs.clipboardHistory }, { prefs.clipboardHistory = it }
+        )
+        addAction(
+            clipboard, R.string.pref_clip_clear_title, R.string.pref_clip_clear_desc
+        ) { confirmClearClipboard() }
+
         // Pintasan (gestur)
         addSection(R.string.sec_shortcuts)
         val shortcuts = newCard()
@@ -266,6 +277,18 @@ class PreferencesActivity : AppCompatActivity() {
             .setPositiveButton(R.string.btn_delete) { _, _ ->
                 LearnedWords.clear(this)
                 Toast.makeText(this, R.string.toast_learned_cleared, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
+    }
+
+    private fun confirmClearClipboard() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_clip_clear_title)
+            .setMessage(R.string.dialog_clip_clear_message)
+            .setPositiveButton(R.string.btn_delete) { _, _ ->
+                ClipboardStore.clear(this)
+                Toast.makeText(this, R.string.toast_clip_cleared, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.btn_cancel, null)
             .show()

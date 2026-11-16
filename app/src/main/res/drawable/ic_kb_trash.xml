@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Tempat sampah. Warna diatur dari kode. -->
+    <path
+        android:pathData="M4,7H20M10,11V17M14,11V17M5,7L6,20A1,1 0 0,0 7,21H17A1,1 0 0,0 18,20L19,7M9,7V4H15V7"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

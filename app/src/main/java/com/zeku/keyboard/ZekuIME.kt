@@ -1,5 +1,6 @@
 package com.zeku.keyboard
 
+import android.content.ClipboardManager
 import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
@@ -37,6 +38,11 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
 
     // Belajar dari ketikan: hanya bila pengaturannya menyala dan kolom teks mengizinkan.
     private val prefs by lazy { Prefs(this) }
+
+    // Papan klip: teks yang disalin dicatat selama keyboard ini aktif.
+    private val clipboardManager by lazy { getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager }
+    private val clipChangedListener =
+        ClipboardManager.OnPrimaryClipChangedListener { captureClipboard(fromListener = true) }
     private var learningAllowed = true
 
     override fun onCreate() {
@@ -44,10 +50,14 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         suggester = WordSuggester(applicationContext)
         suggester.loadAsync { refreshSuggestions(userDriven = false) }
         LearnedWords.loadAsync(applicationContext) { refreshSuggestions(userDriven = false) }
+        ClipboardStore.loadAsync(applicationContext) { }
+        clipboardManager?.addPrimaryClipChangedListener(clipChangedListener)
     }
 
     override fun onDestroy() {
+        clipboardManager?.removePrimaryClipChangedListener(clipChangedListener)
         LearnedWords.flush()
+        ClipboardStore.flush()
         super.onDestroy()
     }
 
@@ -70,6 +80,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         trackedStart = info?.initialSelStart ?: -1
         trackedEnd = info?.initialSelEnd ?: -1
         suggestionsAllowed = suggestionsAllowedFor(info?.inputType ?: InputType.TYPE_NULL)
+        captureClipboard(fromListener = false)
         learningAllowed = suggestionsAllowed &&
             ((info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0
         val view = keyboardView ?: return
@@ -81,6 +92,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             view.applyShift(ShiftState.OFF)
             view.resetTopBar()
             view.closeEmoji()
+            view.closeClipboard()
         }
         refreshAutoShift()
         applyNavigationBar()
@@ -90,8 +102,9 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     /** Fokus berpindah: gestur seleksi yang belum selesai dibuang tanpa menyentuh teks. */
     override fun onFinishInput() {
         session = null
-        // Simpan kata yang dipelajari sebelum kolom teks ditutup.
+        // Simpan kata yang dipelajari dan papan klip sebelum kolom teks ditutup.
         LearnedWords.flush()
+        ClipboardStore.flush()
         super.onFinishInput()
     }
 
@@ -347,6 +360,29 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         else -> word
     }
 
+    /**
+     * Catat teks di papan klip sistem ke riwayat. Teks yang ditandai sensitif oleh aplikasi asalnya
+     * (misalnya sandi dari pengelola sandi) tidak dicatat.
+     */
+    private fun captureClipboard(fromListener: Boolean) {
+        if (!prefs.clipboardHistory) return
+        val manager = clipboardManager ?: return
+        val text: String? = try {
+            val clip = manager.primaryClip
+            if (clip == null || clip.itemCount == 0) {
+                null
+            } else if (clip.description?.extras?.getBoolean(EXTRA_IS_SENSITIVE, false) == true) {
+                null
+            } else {
+                clip.getItemAt(0).coerceToText(this)?.toString()
+            }
+        } catch (e: Exception) {
+            null
+        }
+        if (text.isNullOrEmpty()) return
+        ClipboardStore.capture(text, fromListener)
+    }
+
     private fun canLearn(): Boolean = learningAllowed && prefs.learnTyping
 
     /** Spasi, baris baru, atau tanda baca penutup: tanda satu kata selesai diketik. */
@@ -422,5 +458,8 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
 
         /** Panjang teks sebelum kursor yang dibaca untuk mencari kata yang sedang diketik. */
         const val MAX_WORD_CHARS = 32
+
+        /** Penanda sensitif pada klip (ClipDescription.EXTRA_IS_SENSITIVE, ada sejak Android 13). */
+        const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
     }
 }

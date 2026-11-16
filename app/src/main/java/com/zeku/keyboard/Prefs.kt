@@ -127,6 +127,11 @@ class Prefs(context: Context) {
         get() = readBool(KEY_LEARN_TYPING, true)
         set(value) = writeBool(KEY_LEARN_TYPING, value)
 
+    /** Simpan riwayat papan klip (teks yang disalin) di perangkat untuk ditempel lagi. */
+    var clipboardHistory: Boolean
+        get() = readBool(KEY_CLIPBOARD, true)
+        set(value) = writeBool(KEY_CLIPBOARD, value)
+
     /** Emoji: tekan lama tombol koma membuka panel emoji. */
     var emoji: Boolean
         get() = readBool(KEY_EMOJI, true)
@@ -320,6 +325,7 @@ class Prefs(context: Context) {
         private const val KEY_TOOLS_BAR = "tools_bar"
         private const val KEY_LEARN_TYPING = "learn_typing"
         private const val KEY_EMOJI = "emoji_enabled"
+        private const val KEY_CLIPBOARD = "clipboard_history"
         private const val KEY_EMOJI_RECENTS = "emoji_recents"
         private const val KEY_SUGGESTION_BAR = "suggestion_bar"
 
@@ -330,7 +336,7 @@ class Prefs(context: Context) {
             KEY_LP_NUMBERS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
-            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING, KEY_EMOJI
+            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING, KEY_EMOJI, KEY_CLIPBOARD
         )
     }
 }
