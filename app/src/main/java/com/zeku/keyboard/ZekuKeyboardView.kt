@@ -134,7 +134,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var suggestOn = true
     private var barH = 0f
     private var topMode = TopBarMode.TOOLS
-    private var spaceRun = 0
+
+    // Selama kolom teks baru dibuka dan belum disentuh, bilah atas tetap Tools.
+    private var topBarLocked = true
 
     // Kolom saran kata: saran terkini dan jari yang sedang menekan salah satu kotaknya.
     private var suggestions: List<String> = emptyList()
@@ -269,51 +271,42 @@ class ZekuKeyboardView(context: Context) : View(context) {
         invalidate()
     }
 
-    /** Saran kata terbaru (paling banyak tiga, yang terbaik di urutan pertama). */
-    fun setSuggestions(words: List<String>) {
+    /**
+     * Perbarui bilah atas dari teks sebelum kursor dan kandidat saran dari mesin prediksi.
+     * Bila Tools dan kolom saran sama-sama menyala, aturannya:
+     * - Tools: kolom baru dibuka dan belum disentuh, tidak ada teks sebelum kursor (kosong atau
+     *   hanya spasi), mesin prediksi tidak punya kandidat, atau teks berakhir dua spasi atau lebih.
+     * - Saran: ada teks sebelum kursor dan ada kandidat, termasuk tebakan kata berikutnya setelah
+     *   satu kata dan satu spasi.
+     * [userDriven] benar bila perubahan datang dari pengguna (mengetik, hapus, kursor berpindah);
+     * itu melepas kunci Tools awal.
+     */
+    fun setTopBarState(textBeforeCursor: String, words: List<String>, userDriven: Boolean) {
         val next = words.take(SUGGESTION_COUNT)
-        if (next == suggestions) return
+        val changed = next != suggestions
         suggestions = next
-        if (activeTopBar() == TopBarMode.SUGGEST) invalidate()
-    }
+        if (userDriven) topBarLocked = false
 
-    /** Bilah atas kembali menampilkan Tools (dipanggil saat kolom teks baru dibuka). */
-    fun resetTopBar() {
-        spaceRun = 0
-        setTopMode(TopBarMode.TOOLS)
-    }
-
-    /**
-     * Samakan bilah atas dengan teks tepat sebelum kursor, dipanggil saat teks dihapus atau kursor
-     * berpindah: kosong (atau hanya spasi) atau berakhir dua spasi atau lebih berarti Tools, selain itu (kursor di kata
-     * atau setelah spasi pertama) kembali ke kolom saran.
-     */
-    fun syncTopBar(textBeforeCursor: String) {
         val trailingSpaces = textBeforeCursor.takeLastWhile { it == ' ' }.length
-        spaceRun = trailingSpaces
-        setTopMode(
-            if (textBeforeCursor.isBlank() || trailingSpaces >= 2) TopBarMode.TOOLS
-            else TopBarMode.SUGGEST
-        )
-    }
-
-    private fun setTopMode(mode: TopBarMode) {
-        if (topMode == mode) return
-        topMode = mode
-        invalidate()
-    }
-
-    /**
-     * Catat teks yang baru diketik untuk menentukan isi bilah atas: karakter selain spasi
-     * beralih ke kolom saran, spasi dua kali berturut-turut (setelah karakter terakhir) kembali ke Tools.
-     */
-    private fun trackTopBar(text: String) {
-        if (text == " ") {
-            spaceRun++
-            if (spaceRun >= 2) setTopMode(TopBarMode.TOOLS)
+        val mode = if (topBarLocked || textBeforeCursor.isBlank() || trailingSpaces >= 2 || next.isEmpty()) {
+            TopBarMode.TOOLS
         } else {
-            spaceRun = 0
-            setTopMode(TopBarMode.SUGGEST)
+            TopBarMode.SUGGEST
+        }
+        if (mode != topMode) {
+            topMode = mode
+            invalidate()
+        } else if (changed && activeTopBar() == TopBarMode.SUGGEST) {
+            invalidate()
+        }
+    }
+
+    /** Bilah atas kembali ke Tools dan terkunci sampai pengguna menyentuh kolom teks. */
+    fun resetTopBar() {
+        topBarLocked = true
+        if (topMode != TopBarMode.TOOLS) {
+            topMode = TopBarMode.TOOLS
+            invalidate()
         }
     }
 
@@ -486,9 +479,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val word = suggestionAt(cell) ?: return
         feedback(KeyType.CHARACTER)
         listener?.onSuggestionPick(word)
-        // Kata sudah diberi satu spasi: satu ketukan spasi lagi (dua spasi) kembali ke Tools.
-        spaceRun = 1
-        setTopMode(TopBarMode.SUGGEST)
     }
 
     private fun drawKey(canvas: Canvas, box: KeyBox) {
@@ -826,7 +816,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (vibrateOn) vibrate()
         if (shiftState == ShiftState.ONCE) shiftState = ShiftState.OFF
         listener?.onKeyText(alt)
-        trackTopBar(alt)
         if (previewPointer == id) previewBox = null
         invalidate()
     }
@@ -903,10 +892,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun perform(key: Key) {
         when (key.type) {
             KeyType.CHARACTER -> commitCharacter(key)
-            KeyType.SPACE -> {
-                listener?.onKeyText(" ")
-                trackTopBar(" ")
-            }
+            KeyType.SPACE -> listener?.onKeyText(" ")
             KeyType.SHIFT -> toggleShift()
             KeyType.ENTER -> listener?.onKeyEnter()
             KeyType.TO_SYMBOLS -> showLayout(LayoutMode.SYMBOLS_1)
@@ -920,7 +906,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val text = displayLabel(key)
         if (shiftState == ShiftState.ONCE) shiftState = ShiftState.OFF
         listener?.onKeyText(text)
-        trackTopBar(text)
     }
 
     /** Sekali ketuk = huruf besar sekali, dua kali ketuk cepat = caps lock. */

@@ -69,9 +69,9 @@
     <string name="btn_cancel">Batal</string>
     <string name="toast_learned_cleared">Kata yang dipelajari sudah dihapus</string>
     <string name="pref_tools_title">Tools keyboard</string>
-    <string name="pref_tools_desc">Bilah alat di atas tombol. Tampil saat kolom teks dibuka dan setelah spasi dua kali. Isinya menyusul.</string>
+    <string name="pref_tools_desc">Bilah alat di atas tombol. Tampil saat kolom teks dibuka atau kosong, dan saat tidak ada saran. Isinya menyusul.</string>
     <string name="pref_suggest_title">Kolom saran kata</string>
-    <string name="pref_suggest_desc">Saran kata di atas tombol saat mengetik. Ketuk saran untuk memasukkannya. Bila Tools juga menyala, keduanya bergantian di bilah yang sama.</string>
+    <string name="pref_suggest_desc">Saran kata di atas tombol: melengkapi kata yang diketik, memperbaiki salah ketik, dan menebak kata berikutnya. Ketuk saran untuk memasukkannya. Bila Tools juga menyala, keduanya bergantian di bilah yang sama.</string>
     <string name="sec_shortcuts">Pintasan</string>
     <string name="sec_feedback">Pengetuk tombol</string>
 

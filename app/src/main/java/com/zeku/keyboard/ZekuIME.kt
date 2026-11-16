@@ -42,8 +42,8 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     override fun onCreate() {
         super.onCreate()
         suggester = WordSuggester(applicationContext)
-        suggester.loadAsync { refreshSuggestions() }
-        LearnedWords.loadAsync(applicationContext) { refreshSuggestions() }
+        suggester.loadAsync { refreshSuggestions(userDriven = false) }
+        LearnedWords.loadAsync(applicationContext) { refreshSuggestions(userDriven = false) }
     }
 
     override fun onDestroy() {
@@ -83,7 +83,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         }
         refreshAutoShift()
         applyNavigationBar()
-        refreshSuggestions()
+        refreshSuggestions(userDriven = false)
     }
 
     /** Fokus berpindah: gestur seleksi yang belum selesai dibuang tanpa menyentuh teks. */
@@ -107,10 +107,9 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         )
         trackedStart = newSelStart
         trackedEnd = newSelEnd
-        // Kursor berpindah (hapus, geser, ketuk di teks, atau kolom dikosongkan aplikasi):
-        // samakan bilah atas dengan teks di sekitar kursor.
-        if (newSelStart != oldSelStart || newSelEnd != oldSelEnd) syncTopBarWithText()
-        refreshSuggestions()
+        // Kursor berpindah (ketik, hapus, geser, ketuk di teks, atau kolom dikosongkan aplikasi):
+        // bilah atas dan saran dihitung ulang dari teks di sekitar kursor.
+        refreshSuggestions(userDriven = newSelStart != oldSelStart || newSelEnd != oldSelEnd)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -138,7 +137,11 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         if (typedLength > 0) ic.deleteSurroundingText(typedLength, 0)
         ic.commitText("$word ", 1)
         ic.endBatchEdit()
-        if (canLearn()) LearnedWords.learn(word.lowercase())
+        if (canLearn()) {
+            LearnedWords.learn(word.lowercase())
+            val prev = previousWordForNext(before.dropLast(typedLength))
+            if (prev != null) LearnedWords.learnPair(prev, word.lowercase())
+        }
         refreshAutoShift()
         refreshSuggestions()
     }
@@ -147,7 +150,6 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         // Event tombol DEL paling kompatibel: menghapus pilihan teks atau satu karakter.
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         refreshAutoShift()
-        syncTopBarWithText()
         refreshSuggestions()
     }
 
@@ -182,7 +184,6 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             sendDownUpKeyEvents(key)
         }
         refreshAutoShift()
-        syncTopBarWithText()
         refreshSuggestions()
     }
 
@@ -260,7 +261,6 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             ic.setSelection(s.anchor, s.anchor)
         }
         refreshAutoShift()
-        syncTopBarWithText()
         refreshSuggestions()
     }
 
@@ -296,30 +296,47 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         return (inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
     }
 
-    /** Hitung saran dari huruf yang baru diketik tepat sebelum kursor, lalu kirim ke kolom saran. */
-    private fun refreshSuggestions() {
+    /**
+     * Hitung kandidat dari teks tepat sebelum kursor, lalu kirim ke bilah atas:
+     * - ada huruf yang sedang diketik: lengkapi kata, atau perbaiki salah ketik bila tidak ada kata cocok;
+     * - tepat satu spasi setelah sebuah kata: tebak kata berikutnya;
+     * - selain itu atau kursor di tengah kata: tanpa kandidat.
+     * [userDriven] salah untuk pembaruan otomatis (kolom baru dibuka, data selesai dimuat).
+     */
+    private fun refreshSuggestions(userDriven: Boolean = true) {
         val view = keyboardView ?: return
-        if (!suggestionsAllowed) {
-            view.setSuggestions(emptyList())
-            return
-        }
         val ic = currentInputConnection
-        if (ic == null) {
-            view.setSuggestions(emptyList())
+        val before = ic?.getTextBeforeCursor(MAX_WORD_CHARS, 0)?.toString()
+        if (ic == null || before == null || !suggestionsAllowed) {
+            view.setTopBarState(before ?: "", emptyList(), userDriven)
             return
         }
-        val before = ic.getTextBeforeCursor(MAX_WORD_CHARS, 0)?.toString() ?: ""
         val after = ic.getTextAfterCursor(1, 0)?.toString() ?: ""
+        val midWord = after.isNotEmpty() && isAsciiLetter(after[0])
+        val useLearned = prefs.learnTyping
         val typed = before.takeLastWhile { isAsciiLetter(it) }
-        // Kursor di tengah kata, atau belum ada huruf yang diketik: tidak ada saran.
-        if (typed.isEmpty() || (after.isNotEmpty() && isAsciiLetter(after[0]))) {
-            view.setSuggestions(emptyList())
-            return
+
+        val words: List<String> = when {
+            midWord -> emptyList()
+            typed.isNotEmpty() -> {
+                val lower = typed.lowercase()
+                var found = suggester.suggest(lower, useLearned = useLearned)
+                if (found.isEmpty()) found = suggester.correct(lower, useLearned = useLearned)
+                found.map { matchCase(typed, it) }
+            }
+            else -> {
+                val prev = previousWordForNext(before)
+                if (prev == null) emptyList() else suggester.predictNext(prev, useLearned = useLearned)
+            }
         }
-        view.setSuggestions(
-            suggester.suggest(typed.lowercase(), useLearned = prefs.learnTyping)
-                .map { matchCase(typed, it) }
-        )
+        view.setTopBarState(before, words, userDriven)
+    }
+
+    /** Kata sebelum satu spasi di akhir [before] (untuk menebak kata berikutnya), atau null. */
+    private fun previousWordForNext(before: String): String? {
+        if (!before.endsWith(" ") || before.endsWith("  ")) return null
+        val word = before.dropLast(1).takeLastWhile { isAsciiLetter(it) }
+        return if (word.length >= LearnedWords.MIN_LENGTH) word.lowercase() else null
     }
 
     /** Saran mengikuti huruf besar yang diketik: Awal Besar tetap Awal Besar, SEMUA BESAR tetap besar. */
@@ -327,16 +344,6 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         typed.length > 1 && typed.all { it in 'A'..'Z' } -> word.uppercase()
         typed[0] in 'A'..'Z' -> word.substring(0, 1).uppercase() + word.substring(1)
         else -> word
-    }
-
-    /**
-     * Samakan bilah atas dengan teks sebelum kursor: kosong atau berakhir dua spasi berarti Tools,
-     * selain itu kolom saran. Bila kolom tidak memberi tahu isinya, bilah dibiarkan.
-     */
-    private fun syncTopBarWithText() {
-        val ic = currentInputConnection ?: return
-        val before = ic.getTextBeforeCursor(MAX_WORD_CHARS, 0) ?: return
-        keyboardView?.syncTopBar(before.toString())
     }
 
     private fun canLearn(): Boolean = learningAllowed && prefs.learnTyping
@@ -354,7 +361,11 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         if (after.isNotEmpty() && isAsciiLetter(after[0])) return
         val typed = before.takeLastWhile { isAsciiLetter(it) }
         if (typed.length in LearnedWords.MIN_LENGTH..LearnedWords.MAX_LENGTH) {
-            LearnedWords.learn(typed.lowercase())
+            val word = typed.lowercase()
+            LearnedWords.learn(word)
+            // Pasangan "kata sebelumnya lalu kata ini" bila dipisah satu spasi.
+            val prev = previousWordForNext(before.dropLast(typed.length))
+            if (prev != null) LearnedWords.learnPair(prev, word)
         }
     }
 

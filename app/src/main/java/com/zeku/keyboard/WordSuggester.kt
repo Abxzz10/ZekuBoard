@@ -5,24 +5,31 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * Pencari saran kata dari awalan, memakai dua sumber:
- * 1. Kata yang dipelajari dari ketikan pengguna ([LearnedWords]), urut dari yang paling sering.
- * 2. Daftar kata di assets/words_id.txt (satu kata per baris, huruf kecil). Daftar ini belum punya
- *    data frekuensi, jadi urutannya: kata yang lebih pendek dulu, lalu urutan abjad.
+ * Mesin saran kata, tiga kemampuan:
+ * 1. [suggest]: melengkapi kata yang sedang diketik dari awalannya.
+ * 2. [correct]: memperbaiki salah ketik (selisih satu huruf) bila awalan tidak cocok dengan kata mana pun.
+ * 3. [predictNext]: menebak kata berikutnya setelah satu kata dan spasi.
  *
- * Daftar kata dimuat di latar belakang supaya keyboard tidak tertahan; sebelum selesai dimuat
- * atau bila file tidak ada, hanya kata yang dipelajari yang bisa muncul.
+ * Sumber data: kata yang dipelajari dari ketikan pengguna ([LearnedWords]), daftar kata di
+ * assets/words_id.txt (tanpa frekuensi: kata pendek dulu, lalu abjad), dan data awal pasangan kata di
+ * assets/bigrams_id.txt (per baris: kata lalu kata-kata yang biasa mengikutinya, yang paling umum dulu).
+ *
+ * File dimuat di latar belakang supaya keyboard tidak tertahan; sebelum selesai dimuat atau bila
+ * file tidak ada, hanya kata yang dipelajari yang bisa muncul.
  */
 class WordSuggester(private val context: Context) {
 
     @Volatile
     private var words: Array<String> = emptyArray()
 
-    /** Muat daftar kata di thread terpisah. [onLoaded] dipanggil di thread utama setelah selesai. */
+    @Volatile
+    private var seedPairs: Map<String, List<String>> = emptyMap()
+
+    /** Muat data di thread terpisah. [onLoaded] dipanggil di thread utama setelah selesai. */
     fun loadAsync(onLoaded: () -> Unit) {
         Thread {
             val list = try {
-                context.assets.open(FILE_PATH).bufferedReader(Charsets.UTF_8).useLines { lines ->
+                context.assets.open(WORDS_PATH).bufferedReader(Charsets.UTF_8).useLines { lines ->
                     lines.map { it.trim().lowercase() }.filter { it.length >= 2 }.toList()
                 }
             } catch (e: Exception) {
@@ -30,6 +37,20 @@ class WordSuggester(private val context: Context) {
             }
             // Pencarian biner butuh urutan abjad; diurutkan lagi supaya aman bila file diganti.
             words = list.sorted().toTypedArray()
+
+            val pairs = HashMap<String, List<String>>()
+            try {
+                context.assets.open(PAIRS_PATH).bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    for (line in lines) {
+                        val parts = line.trim().lowercase().split(' ', '\t').filter { it.isNotEmpty() }
+                        if (parts.size >= 2) pairs[parts[0]] = parts.drop(1)
+                    }
+                }
+            } catch (e: Exception) {
+                // Tanpa data awal: tebakan hanya dari kata yang dipelajari.
+            }
+            seedPairs = pairs
+
             Handler(Looper.getMainLooper()).post(onLoaded)
         }.start()
     }
@@ -39,6 +60,8 @@ class WordSuggester(private val context: Context) {
         val a = words
         return a.isNotEmpty() && java.util.Arrays.binarySearch(a, word) >= 0
     }
+
+    // ---------------------------------------------------------------- 1. Melengkapi kata
 
     /**
      * Sampai [limit] kata yang diawali [prefix] (huruf kecil). Kata yang sama persis ikut bila ada.
@@ -88,6 +111,83 @@ class WordSuggester(private val context: Context) {
         return best
     }
 
+    // ------------------------------------------------------------ 2. Koreksi salah ketik
+
+    /**
+     * Kata yang selisihnya satu huruf dari [word] (huruf kecil): satu huruf kelebihan, kurang,
+     * salah, atau dua huruf bertukar. Dipakai bila tidak ada kata yang diawali [word].
+     * Urutan: huruf pertama sama dulu, lalu panjang sama, lalu yang lebih sering diketik pengguna.
+     */
+    fun correct(word: String, limit: Int = 3, useLearned: Boolean = true): List<String> {
+        val n = word.length
+        if (words.isEmpty() || n < 3 || n > MAX_CORRECT_LENGTH) return emptyList()
+        // Kata yang sudah benar tidak perlu dikoreksi.
+        if (isKnownWord(word) || (useLearned && LearnedWords.countOf(word) >= MIN_COUNT_UNKNOWN)) {
+            return emptyList()
+        }
+
+        val found = LinkedHashSet<String>()
+        fun consider(c: String) {
+            if (c == word || c.length < 2) return
+            if (isKnownWord(c) || (useLearned && LearnedWords.countOf(c) >= MIN_COUNT_UNKNOWN)) found.add(c)
+        }
+
+        for (i in 0 until n) consider(word.removeRange(i, i + 1))
+        for (i in 0 until n - 1) {
+            val chars = word.toCharArray()
+            val t = chars[i]
+            chars[i] = chars[i + 1]
+            chars[i + 1] = t
+            consider(String(chars))
+        }
+        for (i in 0 until n) {
+            for (c in 'a'..'z') {
+                if (c != word[i]) consider(word.substring(0, i) + c + word.substring(i + 1))
+            }
+        }
+        for (i in 0..n) {
+            for (c in 'a'..'z') consider(word.substring(0, i) + c + word.substring(i))
+        }
+
+        fun penalty(c: String): Int {
+            var p = 0
+            if (c[0] != word[0]) p += 10
+            if (c.length != n) p += 1
+            if (useLearned) p -= minOf(LearnedWords.countOf(c), 20)
+            return p
+        }
+        return found.sortedWith(compareBy<String>({ penalty(it) }, { it })).take(limit)
+    }
+
+    // ----------------------------------------------------------- 3. Tebakan kata berikutnya
+
+    /**
+     * Sampai [limit] kata yang biasa mengikuti [prev] (huruf kecil): dari pasangan yang dipelajari
+     * dari ketikan lebih dulu, lalu dari data awal.
+     */
+    fun predictNext(prev: String, limit: Int = 3, useLearned: Boolean = true): List<String> {
+        if (prev.isEmpty()) return emptyList()
+        val result = ArrayList<String>(limit)
+
+        if (useLearned) {
+            val prevKnown = isKnownWord(prev)
+            LearnedWords.nextFor(prev)
+                .filter { it.second >= MIN_COUNT_UNKNOWN || (prevKnown && isKnownWord(it.first)) }
+                .sortedByDescending { it.second }
+                .forEach { if (result.size < limit && it.first !in result) result.add(it.first) }
+        }
+        val seed = seedPairs[prev]
+        if (seed != null) {
+            for (w in seed) {
+                if (result.size >= limit) break
+                if (w !in result) result.add(w)
+            }
+        }
+        return result
+    }
+
+    // --------------------------------------------------------------------------- Bantuan
+
     /** Indeks pertama yang tidak lebih kecil dari [key]. */
     private fun lowerBound(a: Array<String>, key: String): Int {
         var lo = 0
@@ -107,7 +207,9 @@ class WordSuggester(private val context: Context) {
     }
 
     private companion object {
-        const val FILE_PATH = "words_id.txt"
+        const val WORDS_PATH = "words_id.txt"
+        const val PAIRS_PATH = "bigrams_id.txt"
         const val MIN_COUNT_UNKNOWN = 2
+        const val MAX_CORRECT_LENGTH = 16
     }
 }
