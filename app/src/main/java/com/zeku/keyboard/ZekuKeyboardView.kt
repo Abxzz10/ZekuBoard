@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -15,6 +17,8 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.content.Intent
+import android.net.Uri
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
@@ -111,6 +115,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
         /** Pengguna mengetuk satu saran kata: ganti kata yang sedang diketik dengan [word] + spasi. */
         fun onSuggestionPick(word: String)
+
+        /** Pengguna memilih screenshot di papan klip: tempel [uri] sebagai gambar. */
+        fun onPasteImage(uri: Uri, mime: String)
     }
 
     var listener: Listener? = null
@@ -188,6 +195,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var clipDownPart = 0
     private var clipHeaderTarget = -1
     private var clipLongFired = false
+
+    // Dua mode papan klip: 0 = salinan teks, 1 = screenshot terbaru.
+    private var clipMode = 0
+    private var shotItems: List<ShotItem> = emptyList()
+    private var shotReady = false
+    private var shotLoaded = false
+    private var shotScroll = 0f
+    private val shotSelected = HashSet<Long>()
+    private var shotPromptPressed = false
     private val clipLpRunnable = Runnable { clipLongPress() }
 
     // Ketukan pada tombol alat di bilah Tools.
@@ -252,6 +268,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
         typeface = keyTypeface
     }
     private val clipTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x99000000.toInt() }
     private val icons = HashMap<Int, Drawable?>()
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -1194,6 +1212,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         emojiPressedIndex = -1
         clipDownIndex = -1
         clipHeaderTarget = -1
+        shotPromptPressed = false
         invalidate()
     }
 
@@ -1305,10 +1324,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (clipOpen) return
         closeEmoji()
         cancelTouches()
+        ClipboardStore.expire(prefs.clipMaxAgeMs())
         clipItems = ClipboardStore.items()
         clipScroll = 0f
+        clipMode = 0
+        shotScroll = 0f
         clipSelecting = false
         clipSelected.clear()
+        shotSelected.clear()
         panelTouchActive = false
         clipOpen = true
         requestLayout()
@@ -1321,6 +1344,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         clipOpen = false
         clipSelecting = false
         clipSelected.clear()
+        shotSelected.clear()
         panelCancel()
         requestLayout()
         invalidate()
@@ -1379,39 +1403,51 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val g = panelGeo()
         val margin = clipMargin()
 
-        // Judul, atau jumlah yang dipilih beserta tombol sematkan, hapus, batal.
-        headerPaint.textSize = (g.tabsBottom - g.tabsTop) * 0.46f
-        headerPaint.color = palette.text
+        headerPaint.textSize = (g.tabsBottom - g.tabsTop) * 0.42f
         val titleY = (g.tabsTop + g.tabsBottom) / 2f - (headerPaint.ascent() + headerPaint.descent()) / 2f
-        val title = if (clipSelecting) {
-            context.getString(R.string.clip_selected_fmt, clipSelected.size)
-        } else {
-            context.getString(R.string.clip_title)
-        }
-        canvas.drawText(title, margin + dp(4f), titleY, headerPaint)
         if (clipSelecting) {
+            // Memilih: jumlah yang dipilih dan tombol sematkan, hapus, batal.
+            headerPaint.color = palette.text
+            val count = if (clipMode == 0) clipSelected.size else shotSelected.size
+            canvas.drawText(
+                context.getString(R.string.clip_selected_fmt, count), margin + dp(4f), titleY, headerPaint
+            )
             val icons = intArrayOf(R.drawable.ic_kb_pin, R.drawable.ic_kb_trash, R.drawable.ic_kb_close)
             for (i in 0..2) {
                 val r = clipHeaderRect(i, g)
                 drawPanelFace(canvas, r, clipHeaderTarget == i && panelTouchActive)
                 drawIconAt(canvas, r.centerX(), r.centerY(), icons[i], r.width() * 0.5f)
             }
+        } else {
+            // Dua mode: Teks dan Screenshot.
+            val labels = intArrayOf(R.string.clip_tab_text, R.string.clip_tab_shot)
+            for (i in 0..1) {
+                val r = clipModeRect(i, g)
+                val active = clipMode == i
+                if (active) {
+                    fillPaint.color = palette.key
+                    canvas.drawRoundRect(r, radius, radius, fillPaint)
+                }
+                headerPaint.color = palette.text
+                headerPaint.alpha = if (active) 255 else 150
+                canvas.drawText(context.getString(labels[i]), r.left + dp(14f), titleY, headerPaint)
+                headerPaint.alpha = 255
+            }
         }
 
-        // Daftar kartu (bisa digulir).
+        // Isi: daftar teks atau kisi screenshot (bisa digulir).
         canvas.save()
         canvas.clipRect(0f, g.gridTop, width.toFloat(), g.gridBottom)
+        if (clipMode == 0) drawClipTextList(canvas, g) else drawShotArea(canvas, g)
+        canvas.restore()
+
+        drawPanelBottomRow(canvas, g)
+    }
+
+    private fun drawClipTextList(canvas: Canvas, g: PanelGeo) {
+        val margin = clipMargin()
         if (clipItems.isEmpty()) {
-            clipTextPaint.textSize = dp(14f)
-            clipTextPaint.color = palette.text
-            clipTextPaint.alpha = 150
-            val w = (width - 2 * dp(32f)).toInt()
-            val text = context.getString(R.string.clip_empty)
-            val layout = StaticLayout.Builder.obtain(text, 0, text.length, clipTextPaint, w)
-                .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
-                .build()
-            canvas.translate(dp(32f), (g.gridTop + g.gridBottom) / 2f - layout.height / 2f)
-            layout.draw(canvas)
+            drawCenteredMessage(canvas, g, context.getString(R.string.clip_empty), 0f)
         } else {
             val cardH = clipCardHeight()
             val btnW = clipButtonWidth()
@@ -1421,9 +1457,274 @@ class ZekuKeyboardView(context: Context) : View(context) {
                 drawClipCard(canvas, clipItems[i], i, top, cardH, margin, btnW)
             }
         }
+    }
+
+    /** Pesan di tengah daftar, digeser [offsetY] ke bawah dari tengah. */
+    private fun drawCenteredMessage(canvas: Canvas, g: PanelGeo, text: String, offsetY: Float) {
+        clipTextPaint.textSize = dp(14f)
+        clipTextPaint.color = palette.text
+        clipTextPaint.alpha = 150
+        val w = (width - 2 * dp(32f)).toInt()
+        val layout = StaticLayout.Builder.obtain(text, 0, text.length, clipTextPaint, w)
+            .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
+            .build()
+        canvas.save()
+        canvas.translate(dp(32f), (g.gridTop + g.gridBottom) / 2f - layout.height / 2f + offsetY)
+        layout.draw(canvas)
+        canvas.restore()
+        clipTextPaint.alpha = 255
+    }
+
+    // ------------------------------------------------------------ Mode screenshot
+
+    /** Mode Teks atau Screenshot di judul: 0 atau 1, atau -1 bila di luar kedua tombol. */
+    private fun clipModeAt(x: Float, g: PanelGeo): Int {
+        for (i in 0..1) {
+            val r = clipModeRect(i, g)
+            if (x >= r.left - dp(3f) && x <= r.right + dp(3f)) return i
+        }
+        return -1
+    }
+
+    private fun clipModeRect(index: Int, g: PanelGeo): RectF {
+        headerPaint.textSize = (g.tabsBottom - g.tabsTop) * 0.42f
+        val pad = dp(14f)
+        val gap = dp(6f)
+        val w0 = headerPaint.measureText(context.getString(R.string.clip_tab_text)) + 2 * pad
+        val w1 = headerPaint.measureText(context.getString(R.string.clip_tab_shot)) + 2 * pad
+        val left = clipMargin() + if (index == 0) 0f else w0 + gap
+        return RectF(left, g.tabsTop, left + if (index == 0) w0 else w1, g.tabsBottom)
+    }
+
+    private fun setClipMode(mode: Int) {
+        if (clipMode == mode) return
+        clipMode = mode
+        clipSelecting = false
+        clipSelected.clear()
+        shotSelected.clear()
+        if (mode == 1) loadShots() else refreshClipItems()
+        invalidate()
+    }
+
+    /**
+     * Muat screenshot terbaru. Batas waktu: sejak fitur dinyalakan (supaya screenshot lama tidak ikut),
+     * dan bila hapus otomatis menyala, tidak lebih tua dari lama yang dipilih. Yang disematkan tetap tampil.
+     */
+    private fun loadShots() {
+        shotScroll = 0f
+        shotReady = prefs.clipScreenshots && ScreenshotStore.hasPermission(context)
+        shotLoaded = false
+        if (!shotReady) {
+            shotItems = emptyList()
+            invalidate()
+            return
+        }
+        var start = prefs.screenshotSinceMs / 1000L
+        val maxAge = prefs.clipMaxAgeMs()
+        if (maxAge > 0L) start = max(start, System.currentTimeMillis() / 1000L - maxAge / 1000L)
+        ScreenshotStore.load(context, start) { list ->
+            if (clipOpen && clipMode == 1) {
+                shotItems = list
+                shotLoaded = true
+                shotScroll = shotScroll.coerceIn(0f, shotScrollMax(panelGeo()))
+                invalidate()
+            }
+        }
+    }
+
+    private fun refreshShots() {
+        shotItems = ScreenshotStore.order(shotItems)
+        shotScroll = shotScroll.coerceIn(0f, shotScrollMax(panelGeo()))
+        invalidate()
+    }
+
+    private class ShotGeo(val cols: Int, val cellW: Float, val cellH: Float, val margin: Float, val gap: Float)
+
+    private fun shotGeo(g: PanelGeo): ShotGeo {
+        val margin = dp(8f)
+        val gap = dp(6f)
+        val cols = max(3, (width / dp(120f)).toInt())
+        val cellW = (width - 2 * margin - (cols - 1) * gap) / cols
+        val cellH = minOf(cellW * 1.5f, (g.gridBottom - g.gridTop) * 0.85f)
+        return ShotGeo(cols, cellW, cellH, margin, gap)
+    }
+
+    private fun shotCellRect(index: Int, sg: ShotGeo, g: PanelGeo): RectF {
+        val row = index / sg.cols
+        val col = index % sg.cols
+        val left = sg.margin + col * (sg.cellW + sg.gap)
+        val top = g.gridTop + sg.gap + row * (sg.cellH + sg.gap) - shotScroll
+        return RectF(left, top, left + sg.cellW, top + sg.cellH)
+    }
+
+    private fun shotScrollMax(g: PanelGeo): Float {
+        val sg = shotGeo(g)
+        val rows = (shotItems.size + sg.cols - 1) / sg.cols
+        val content = rows * (sg.cellH + sg.gap) + sg.gap
+        return max(0f, content - (g.gridBottom - g.gridTop))
+    }
+
+    private fun shotIndexAt(x: Float, y: Float, g: PanelGeo): Int {
+        val sg = shotGeo(g)
+        for (i in shotItems.indices) {
+            val r = shotCellRect(i, sg, g)
+            if (r.bottom < g.gridTop) continue
+            if (r.top > g.gridBottom) break
+            if (r.contains(x, y)) return i
+        }
+        return -1
+    }
+
+    /** Bagian screenshot yang disentuh: 0 = gambar, 1 = tombol sematkan (kiri atas), 2 = tombol hapus (kanan atas). */
+    private fun shotPartAt(x: Float, y: Float, index: Int, g: PanelGeo): Int {
+        if (clipSelecting) return 0
+        val r = shotCellRect(index, shotGeo(g), g)
+        val reach = dp(20f)
+        return when {
+            x <= r.left + 2 * reach && y <= r.top + 2 * reach -> 1
+            x >= r.right - 2 * reach && y <= r.top + 2 * reach -> 2
+            else -> 0
+        }
+    }
+
+    private fun shotPromptRect(g: PanelGeo): RectF {
+        val w = dp(180f)
+        val h = dp(44f)
+        val cx = width / 2f
+        val cy = (g.gridTop + g.gridBottom) / 2f + dp(44f)
+        return RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+    }
+
+    private fun drawShotArea(canvas: Canvas, g: PanelGeo) {
+        if (!shotReady) {
+            // Belum ada izin atau fitur belum dinyalakan: ajak memberi izin.
+            drawCenteredMessage(canvas, g, context.getString(R.string.shot_need_access), -dp(24f))
+            val r = shotPromptRect(g)
+            drawPanelFace(canvas, r, shotPromptPressed)
+            headerPaint.textSize = rowHeight * 0.3f
+            headerPaint.color = palette.text
+            val label = context.getString(R.string.shot_grant)
+            val x = r.centerX() - headerPaint.measureText(label) / 2f
+            val y = r.centerY() - (headerPaint.ascent() + headerPaint.descent()) / 2f
+            canvas.drawText(label, x, y, headerPaint)
+            return
+        }
+        if (!shotLoaded) return
+        if (shotItems.isEmpty()) {
+            drawCenteredMessage(canvas, g, context.getString(R.string.shot_empty), 0f)
+            return
+        }
+        val sg = shotGeo(g)
+        for (i in shotItems.indices) {
+            val r = shotCellRect(i, sg, g)
+            if (r.bottom < g.gridTop) continue
+            if (r.top > g.gridBottom) break
+            drawShotCell(canvas, shotItems[i], i, r)
+        }
+    }
+
+    private fun drawShotCell(canvas: Canvas, item: ShotItem, index: Int, r: RectF) {
+        val selected = item.id in shotSelected
+        val bitmap = ShotThumbs.get(item.id)
+        canvas.save()
+        val clip = Path().apply { addRoundRect(r, radius, radius, Path.Direction.CW) }
+        canvas.clipPath(clip)
+        if (bitmap != null) {
+            // Isi kotak penuh dari tengah gambar (center crop).
+            val scale = max(r.width() / bitmap.width, r.height() / bitmap.height)
+            val srcW = r.width() / scale
+            val srcH = r.height() / scale
+            val srcL = (bitmap.width - srcW) / 2f
+            val srcT = (bitmap.height - srcH) / 2f
+            val src = Rect(srcL.toInt(), srcT.toInt(), (srcL + srcW).toInt(), (srcT + srcH).toInt())
+            canvas.drawBitmap(bitmap, src, r, bitmapPaint)
+        } else {
+            fillPaint.color = palette.key
+            canvas.drawRect(r, fillPaint)
+            ShotThumbs.request(context, item) { invalidate() }
+        }
+        val pressed = panelTouchActive && clipDownIndex == index && clipDownPart == 0 &&
+            !panelScrolling && clipMode == 1
+        if (pressed) {
+            fillPaint.color = 0x33FFFFFF
+            canvas.drawRect(r, fillPaint)
+        }
         canvas.restore()
 
-        drawPanelBottomRow(canvas, g)
+        if (selected) {
+            strokePaint.color = palette.text
+            strokePaint.strokeWidth = dp(2f)
+            canvas.drawRoundRect(r, radius, radius, strokePaint)
+        }
+
+        val white = 0xFFFFFFFF.toInt()
+        val circle = dp(14f)
+        val pinCx = r.left + dp(20f)
+        val rightCx = r.right - dp(20f)
+        val topCy = r.top + dp(20f)
+        if (clipSelecting) {
+            // Kotak pilih di kanan atas; tanda sematan di kiri atas bila disematkan.
+            if (selected) {
+                fillPaint.color = palette.text
+                canvas.drawCircle(rightCx, topCy, circle, fillPaint)
+                drawIconAt(canvas, rightCx, topCy, R.drawable.ic_kb_check, circle * 1.2f, tint = palette.key)
+            } else {
+                canvas.drawCircle(rightCx, topCy, circle, overlayPaint)
+                strokePaint.color = white
+                strokePaint.strokeWidth = dp(1.5f)
+                canvas.drawCircle(rightCx, topCy, circle, strokePaint)
+            }
+            if (item.pinned) {
+                canvas.drawCircle(pinCx, topCy, circle, overlayPaint)
+                drawIconAt(canvas, pinCx, topCy, R.drawable.ic_kb_pin, circle * 1.1f, tint = white)
+            }
+        } else {
+            // Tombol sematkan (terang bila disematkan) dan hapus di sudut atas.
+            canvas.drawCircle(pinCx, topCy, circle, overlayPaint)
+            drawIconAt(
+                canvas, pinCx, topCy, R.drawable.ic_kb_pin, circle * 1.1f,
+                if (item.pinned) 255 else 150, white
+            )
+            canvas.drawCircle(rightCx, topCy, circle, overlayPaint)
+            drawIconAt(canvas, rightCx, topCy, R.drawable.ic_kb_trash, circle * 1.1f, 220, white)
+        }
+    }
+
+    private fun openScreenshotAccess() {
+        closeClipboard()
+        val intent = Intent(context, ScreenshotAccessActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            // Tidak bisa membuka layar izin: abaikan.
+        }
+    }
+
+    private fun shotItemTapped(item: ShotItem, part: Int) {
+        feedback(KeyType.CHARACTER)
+        if (clipSelecting) {
+            // Mode memilih: ketuk untuk memilih atau melepas pilihan.
+            if (!shotSelected.add(item.id)) shotSelected.remove(item.id)
+            if (shotSelected.isEmpty()) clipSelecting = false
+            invalidate()
+            return
+        }
+        when (part) {
+            1 -> {
+                ScreenshotStore.setPinned(context, setOf(item.id), !item.pinned)
+                refreshShots()
+            }
+            2 -> {
+                ScreenshotStore.dismiss(context, listOf(item))
+                refreshShots()
+            }
+            else -> {
+                // Ketuk gambar: tempel sebagai gambar, lalu kembali ke keyboard.
+                listener?.onPasteImage(item.uri, item.mime)
+                closeClipboard()
+            }
+        }
     }
 
     private fun drawClipCard(
@@ -1498,10 +1799,13 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     /** Ikon berukuran [size] piksel yang berpusat di ([cx], [cy]), dengan warna teks keyboard. */
-    private fun drawIconAt(canvas: Canvas, cx: Float, cy: Float, res: Int, size: Float, alpha: Int = 255) {
+    private fun drawIconAt(
+        canvas: Canvas, cx: Float, cy: Float, res: Int, size: Float,
+        alpha: Int = 255, tint: Int = palette.text
+    ) {
         val d = icon(res) ?: return
         val half = (size / 2f).toInt()
-        d.setTint(palette.text)
+        d.setTint(tint)
         d.alpha = alpha
         d.setBounds(cx.toInt() - half, cy.toInt() - half, cx.toInt() + half, cy.toInt() + half)
         d.draw(canvas)
@@ -1539,16 +1843,24 @@ class ZekuKeyboardView(context: Context) : View(context) {
             }
             y < g.gridTop -> {
                 panelRegion = PANEL_TAB
-                if (clipSelecting) clipHeaderTarget = clipHeaderButtonAt(x, g)
+                clipHeaderTarget = if (clipSelecting) {
+                    clipHeaderButtonAt(x, g)
+                } else {
+                    clipModeAt(x, g).let { if (it >= 0) CLIP_TARGET_MODE + it else -1 }
+                }
             }
             else -> {
                 panelRegion = PANEL_GRID
-                val index = clipItemAt(y, g)
-                if (index >= 0) {
-                    clipDownIndex = index
-                    clipDownPart = clipPartAt(x)
-                    // Tahan lama (sepanjang Durasi tekan lama) untuk mulai memilih beberapa teks.
-                    if (!clipSelecting) repeatHandler.postDelayed(clipLpRunnable, longPressDelay)
+                if (clipMode == 1 && !shotReady) {
+                    shotPromptPressed = shotPromptRect(g).contains(x, y)
+                } else {
+                    val index = if (clipMode == 0) clipItemAt(y, g) else shotIndexAt(x, y, g)
+                    if (index >= 0) {
+                        clipDownIndex = index
+                        clipDownPart = if (clipMode == 0) clipPartAt(x) else shotPartAt(x, y, index, g)
+                        // Tahan lama (sepanjang Durasi tekan lama) untuk mulai memilih beberapa item.
+                        if (!clipSelecting) repeatHandler.postDelayed(clipLpRunnable, longPressDelay)
+                    }
                 }
             }
         }
@@ -1565,7 +1877,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
                 }
                 if (panelScrolling) {
                     val g = panelGeo()
-                    clipScroll = (clipScroll - (y - panelLastY)).coerceIn(0f, clipScrollMax(g))
+                    if (clipMode == 0) {
+                        clipScroll = (clipScroll - (y - panelLastY)).coerceIn(0f, clipScrollMax(g))
+                    } else {
+                        shotScroll = (shotScroll - (y - panelLastY)).coerceIn(0f, shotScrollMax(g))
+                    }
                     invalidate()
                 }
                 panelLastY = y
@@ -1575,12 +1891,18 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun clipLongPress() {
         if (!clipOpen || !panelTouchActive || panelRegion != PANEL_GRID || panelScrolling) return
-        val item = clipItems.getOrNull(clipDownIndex) ?: return
+        val id: Long? = if (clipMode == 0) {
+            clipItems.getOrNull(clipDownIndex)?.id
+        } else {
+            shotItems.getOrNull(clipDownIndex)?.id
+        }
+        if (id == null) return
         clipLongFired = true
         if (vibrateOn) vibrate()
         clipSelecting = true
         clipSelected.clear()
-        clipSelected.add(item.id)
+        shotSelected.clear()
+        if (clipMode == 0) clipSelected.add(id) else shotSelected.add(id)
         invalidate()
     }
 
@@ -1589,16 +1911,30 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val g = panelGeo()
         when (panelRegion) {
             PANEL_TAB -> {
-                if (clipSelecting && clipHeaderTarget >= 0 && clipHeaderButtonAt(x, g) == clipHeaderTarget) {
+                val target = clipHeaderTarget
+                if (clipSelecting) {
+                    if (target >= 0 && clipHeaderButtonAt(x, g) == target) {
+                        feedback(KeyType.CHARACTER)
+                        clipHeaderAction(target)
+                    }
+                } else if (target >= CLIP_TARGET_MODE && clipModeAt(x, g) == target - CLIP_TARGET_MODE) {
                     feedback(KeyType.CHARACTER)
-                    clipHeaderAction(clipHeaderTarget)
+                    setClipMode(target - CLIP_TARGET_MODE)
                 }
             }
             PANEL_BOTTOM -> panelBottomUp(x) { closeClipboard() }
-            PANEL_GRID -> {
-                val item = clipItems.getOrNull(clipDownIndex)
-                if (item != null && !panelScrolling && !clipLongFired && clipItemAt(y, g) == clipDownIndex) {
-                    clipItemTapped(item, clipDownPart)
+            PANEL_GRID -> if (clipMode == 1 && !shotReady) {
+                if (shotPromptPressed && shotPromptRect(g).contains(x, y)) {
+                    feedback(KeyType.CHARACTER)
+                    openScreenshotAccess()
+                }
+            } else if (!panelScrolling && !clipLongFired) {
+                if (clipMode == 0) {
+                    val item = clipItems.getOrNull(clipDownIndex)
+                    if (item != null && clipItemAt(y, g) == clipDownIndex) clipItemTapped(item, clipDownPart)
+                } else {
+                    val item = shotItems.getOrNull(clipDownIndex)
+                    if (item != null && shotIndexAt(x, y, g) == clipDownIndex) shotItemTapped(item, clipDownPart)
                 }
             }
         }
@@ -1633,6 +1969,20 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     /** Aksi tombol di judul saat memilih: 0 = sematkan atau lepas sematan, 1 = hapus, 2 = batal. */
     private fun clipHeaderAction(button: Int) {
+        if (clipMode == 1) {
+            val ids = HashSet(shotSelected)
+            when (button) {
+                0 -> {
+                    val pin = shotItems.any { it.id in ids && !it.pinned }
+                    ScreenshotStore.setPinned(context, ids, pin)
+                }
+                1 -> ScreenshotStore.dismiss(context, shotItems.filter { it.id in ids })
+            }
+            clipSelecting = false
+            shotSelected.clear()
+            refreshShots()
+            return
+        }
         val ids = HashSet(clipSelected)
         when (button) {
             0 -> {
@@ -1810,6 +2160,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val PANEL_TAB = 1
         const val PANEL_BOTTOM = 2
         const val PANEL_GRID = 3
+
+        // Penanda sasaran ketuk di judul papan klip: tombol mode Teks (10) dan Screenshot (11).
+        const val CLIP_TARGET_MODE = 10
         const val FONT_PATH = "fonts/AlteHaasGroteskBold.ttf"
 
         // Gestur: jarak geser (dp) sebelum dianggap geseran, dan jarak per karakter.

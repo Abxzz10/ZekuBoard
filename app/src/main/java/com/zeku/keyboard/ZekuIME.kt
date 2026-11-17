@@ -1,6 +1,13 @@
 package com.zeku.keyboard
 
+import android.content.ClipDescription
 import android.content.ClipboardManager
+import android.net.Uri
+import android.os.Build
+import android.widget.Toast
+import androidx.core.view.inputmethod.EditorInfoCompat
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
@@ -58,6 +65,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         clipboardManager?.removePrimaryClipChangedListener(clipChangedListener)
         LearnedWords.flush()
         ClipboardStore.flush()
+        ScreenshotStore.flush()
         super.onDestroy()
     }
 
@@ -81,6 +89,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         trackedEnd = info?.initialSelEnd ?: -1
         suggestionsAllowed = suggestionsAllowedFor(info?.inputType ?: InputType.TYPE_NULL)
         captureClipboard(fromListener = false)
+        ClipboardStore.expire(prefs.clipMaxAgeMs())
         learningAllowed = suggestionsAllowed &&
             ((info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0
         val view = keyboardView ?: return
@@ -105,6 +114,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         // Simpan kata yang dipelajari dan papan klip sebelum kolom teks ditutup.
         LearnedWords.flush()
         ClipboardStore.flush()
+        ScreenshotStore.flush()
         super.onFinishInput()
     }
 
@@ -381,6 +391,26 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         }
         if (text.isNullOrEmpty()) return
         ClipboardStore.capture(text, fromListener)
+    }
+
+    /** Tempel screenshot dari papan klip sebagai gambar, bila kolom teks menerima gambar. */
+    override fun onPasteImage(uri: Uri, mime: String) {
+        val ic = currentInputConnection ?: return
+        val info = currentInputEditorInfo ?: return
+        val accepted = EditorInfoCompat.getContentMimeTypes(info)
+        if (accepted.none { ClipDescription.compareMimeTypes(mime, it) }) {
+            Toast.makeText(this, R.string.shot_not_supported, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val flags = if (Build.VERSION.SDK_INT >= 25) {
+            InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
+        } else {
+            0
+        }
+        val content = InputContentInfoCompat(uri, ClipDescription("screenshot", arrayOf(mime)), null)
+        if (!InputConnectionCompat.commitContent(ic, info, content, flags, null)) {
+            Toast.makeText(this, R.string.shot_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun canLearn(): Boolean = learningAllowed && prefs.learnTyping

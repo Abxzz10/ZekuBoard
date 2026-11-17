@@ -129,6 +129,16 @@ object ClipboardStore {
         markDirty()
     }
 
+    /**
+     * Buang teks yang tidak disematkan dan lebih tua dari [maxAgeMs] milidetik.
+     * [maxAgeMs] 0 atau kurang berarti tidak ada batas waktu.
+     */
+    fun expire(maxAgeMs: Long) {
+        if (maxAgeMs <= 0L || !loaded) return
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        if (list.removeAll { !it.pinned && it.time < cutoff }) markDirty()
+    }
+
     /** Daftar untuk ditampilkan: yang disematkan dulu, lalu sisanya; masing-masing terbaru di depan. */
     fun items(): List<ClipItem> = list.filter { it.pinned } + list.filter { !it.pinned }
 

@@ -3,6 +3,7 @@ package com.zeku.keyboard
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
+import kotlin.math.abs
 
 /**
  * Penyimpanan pengaturan terpusat (SharedPreferences).
@@ -126,6 +127,43 @@ class Prefs(context: Context) {
     var learnTyping: Boolean
         get() = readBool(KEY_LEARN_TYPING, true)
         set(value) = writeBool(KEY_LEARN_TYPING, value)
+
+    /** Hapus otomatis isi papan klip (teks dan screenshot) yang tidak disematkan setelah [clipExpireDays]. */
+    var clipExpire: Boolean
+        get() = readBool(KEY_CLIP_EXPIRE, true)
+        set(value) = writeBool(KEY_CLIP_EXPIRE, value)
+
+    /** Lama bertahan di papan klip, dalam hari: salah satu dari [CLIP_DAYS]. */
+    var clipExpireDays: Int
+        get() {
+            val v = readInt(KEY_CLIP_DAYS, CLIP_DAYS_DEFAULT, CLIP_DAYS.first(), CLIP_DAYS.last())
+            return CLIP_DAYS.minByOrNull { abs(it - v) } ?: CLIP_DAYS_DEFAULT
+        }
+        set(value) = writeInt(KEY_CLIP_DAYS, value, CLIP_DAYS.first(), CLIP_DAYS.last())
+
+    /** Batas umur isi papan klip dalam milidetik; 0 berarti tidak dihapus otomatis. */
+    fun clipMaxAgeMs(): Long = if (clipExpire) clipExpireDays * 86_400_000L else 0L
+
+    /**
+     * Tampilkan screenshot terbaru di papan klip (butuh izin akses foto). Saat dinyalakan, waktunya
+     * dicatat: hanya screenshot yang diambil sesudahnya yang ikut tampil, bukan yang lama.
+     */
+    var clipScreenshots: Boolean
+        get() = readBool(KEY_CLIP_SHOTS, false)
+        set(value) {
+            val was = readBool(KEY_CLIP_SHOTS, false)
+            val editor = sp.edit().putBoolean(KEY_CLIP_SHOTS, value)
+            if (value && !was) editor.putLong(KEY_SHOT_SINCE, System.currentTimeMillis())
+            editor.apply()
+        }
+
+    /** Waktu (ms) fitur screenshot terakhir dinyalakan. */
+    val screenshotSinceMs: Long
+        get() = try {
+            sp.getLong(KEY_SHOT_SINCE, 0L)
+        } catch (e: ClassCastException) {
+            0L
+        }
 
     /** Simpan riwayat papan klip (teks yang disalin) di perangkat untuk ditempel lagi. */
     var clipboardHistory: Boolean
@@ -277,6 +315,10 @@ class Prefs(context: Context) {
         const val WIDTH_DEFAULT = 100
         const val WIDTH_STEP = 5
 
+        // Pilihan lama isi papan klip bertahan, dalam hari.
+        val CLIP_DAYS = intArrayOf(1, 5, 7, 14, 30)
+        const val CLIP_DAYS_DEFAULT = 7
+
         // Durasi getar dalam milidetik (ms).
         const val STRENGTH_MIN = 5
         const val STRENGTH_MAX = 100
@@ -326,6 +368,10 @@ class Prefs(context: Context) {
         private const val KEY_LEARN_TYPING = "learn_typing"
         private const val KEY_EMOJI = "emoji_enabled"
         private const val KEY_CLIPBOARD = "clipboard_history"
+        private const val KEY_CLIP_EXPIRE = "clip_expire"
+        private const val KEY_CLIP_DAYS = "clip_expire_days"
+        private const val KEY_CLIP_SHOTS = "clip_screenshots"
+        private const val KEY_SHOT_SINCE = "clip_shot_since"
         private const val KEY_EMOJI_RECENTS = "emoji_recents"
         private const val KEY_SUGGESTION_BAR = "suggestion_bar"
 
@@ -336,7 +382,8 @@ class Prefs(context: Context) {
             KEY_LP_NUMBERS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
-            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING, KEY_EMOJI, KEY_CLIPBOARD
+            KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING, KEY_EMOJI, KEY_CLIPBOARD,
+            KEY_CLIP_EXPIRE, KEY_CLIP_DAYS
         )
     }
 }

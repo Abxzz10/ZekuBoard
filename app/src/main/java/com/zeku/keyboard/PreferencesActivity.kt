@@ -1,5 +1,6 @@
 package com.zeku.keyboard
 
+import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -36,6 +37,8 @@ class PreferencesActivity : AppCompatActivity() {
     // Baris slider yang ikut mati (abu-abu dan tidak bisa digeser) bila saklarnya dimatikan.
     private var rowVibrate: View? = null
     private var rowVolume: View? = null
+    private var rowClipDays: View? = null
+    private var swClipShots: MaterialSwitch? = null
 
     private val vibrator: Vibrator? by lazy { createVibrator() }
 
@@ -141,6 +144,38 @@ class PreferencesActivity : AppCompatActivity() {
             clipboard, R.string.pref_clip_title, R.string.pref_clip_desc,
             { prefs.clipboardHistory }, { prefs.clipboardHistory = it }
         )
+        swClipShots = addSwitch(
+            clipboard, R.string.pref_shot_title, R.string.pref_shot_desc,
+            { prefs.clipScreenshots && ScreenshotStore.hasPermission(this) },
+            { on ->
+                if (!on) {
+                    prefs.clipScreenshots = false
+                } else if (ScreenshotStore.hasPermission(this)) {
+                    prefs.clipScreenshots = true
+                } else {
+                    // Belum ada izin akses foto: saklar kembali mati, lalu minta izinnya.
+                    swClipShots?.isChecked = false
+                    startActivity(Intent(this, ScreenshotAccessActivity::class.java))
+                }
+            }
+        )
+        addSwitch(
+            clipboard, R.string.pref_clip_expire_title, R.string.pref_clip_expire_desc,
+            { prefs.clipExpire },
+            {
+                prefs.clipExpire = it
+                rowClipDays?.let { row -> setRowEnabled(row, it) }
+            }
+        )
+        val daysRow = addSlider(
+            clipboard, R.string.pref_clip_days_title, R.string.pref_clip_days_desc,
+            0, Prefs.CLIP_DAYS.size - 1, 1,
+            { Prefs.CLIP_DAYS.indexOf(prefs.clipExpireDays).coerceAtLeast(0) },
+            { prefs.clipExpireDays = Prefs.CLIP_DAYS[it] },
+            label = { getString(R.string.clip_days_fmt, Prefs.CLIP_DAYS[it]) }
+        )
+        rowClipDays = daysRow
+        setRowEnabled(daysRow, prefs.clipExpire)
         addAction(
             clipboard, R.string.pref_clip_clear_title, R.string.pref_clip_clear_desc
         ) { confirmClearClipboard() }
@@ -282,6 +317,12 @@ class PreferencesActivity : AppCompatActivity() {
             .show()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Izin foto bisa diberi atau dicabut di luar layar ini: samakan saklar screenshot.
+        swClipShots?.isChecked = prefs.clipScreenshots && ScreenshotStore.hasPermission(this)
+    }
+
     private fun confirmClearClipboard() {
         AlertDialog.Builder(this)
             .setTitle(R.string.dialog_clip_clear_title)
@@ -304,7 +345,8 @@ class PreferencesActivity : AppCompatActivity() {
         get: () -> Int,
         set: (Int) -> Unit,
         @StringRes fmt: Int = R.string.height_fmt,
-        onRelease: (() -> Unit)? = null
+        onRelease: (() -> Unit)? = null,
+        label: ((Int) -> String)? = null
     ): View {
         val row = layoutInflater.inflate(R.layout.item_pref_slider, card, false)
         val slider = row.findViewById<Slider>(R.id.prefSlider)
@@ -318,13 +360,13 @@ class PreferencesActivity : AppCompatActivity() {
         slider.stepSize = step.toFloat()
         val start = snap(get(), min, max, step)
         slider.value = start.toFloat()
-        valueText.text = getString(fmt, start)
+        valueText.text = label?.invoke(start) ?: getString(fmt, start)
 
         slider.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 val v = value.toInt()
                 set(v)
-                valueText.text = getString(fmt, v)
+                valueText.text = label?.invoke(v) ?: getString(fmt, v)
             }
         }
         if (onRelease != null) {

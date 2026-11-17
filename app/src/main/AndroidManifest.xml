@@ -3,6 +3,12 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Hanya untuk membaca daftar screenshot terbaru di papan klip (tidak mengubah atau menghapus file) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
         android:name=".ZekuApp"
         android:allowBackup="true"
@@ -30,6 +36,14 @@
             android:name=".PreferencesActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- Layar tanpa tampilan untuk meminta izin akses foto dari keyboard -->
+        <activity
+            android:name=".ScreenshotAccessActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".ZekuIME"
