@@ -42,15 +42,21 @@ class PreferencesActivity : AppCompatActivity() {
 
     private val vibrator: Vibrator? by lazy { createVibrator() }
 
+    // Activity yang sama dipakai untuk dua halaman: Preferences Typing dan Tools Keyboard.
+    private var toolsPage = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
+        toolsPage = intent.getStringExtra(EXTRA_PAGE) == PAGE_TOOLS
         setContentView(R.layout.activity_preferences)
         applySystemBars()
 
+        findViewById<TextView>(R.id.pageTitle)
+            .setText(if (toolsPage) R.string.title_tools else R.string.title_preferences)
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
         container = findViewById(R.id.prefsContainer)
-        buildPage()
+        if (toolsPage) buildToolsPage() else buildPage()
     }
 
     private fun buildPage() {
@@ -136,49 +142,6 @@ class PreferencesActivity : AppCompatActivity() {
         addAction(
             suggestions, R.string.pref_learn_clear_title, R.string.pref_learn_clear_desc
         ) { confirmClearLearned() }
-
-        // Papan klip: riwayat teks yang disalin (datanya hanya di perangkat)
-        addSection(R.string.sec_clipboard)
-        val clipboard = newCard()
-        addSwitch(
-            clipboard, R.string.pref_clip_title, R.string.pref_clip_desc,
-            { prefs.clipboardHistory }, { prefs.clipboardHistory = it }
-        )
-        swClipShots = addSwitch(
-            clipboard, R.string.pref_shot_title, R.string.pref_shot_desc,
-            { prefs.clipScreenshots && ScreenshotStore.hasPermission(this) },
-            { on ->
-                if (!on) {
-                    prefs.clipScreenshots = false
-                } else if (ScreenshotStore.hasPermission(this)) {
-                    prefs.clipScreenshots = true
-                } else {
-                    // Belum ada izin akses foto: saklar kembali mati, lalu minta izinnya.
-                    swClipShots?.isChecked = false
-                    startActivity(Intent(this, ScreenshotAccessActivity::class.java))
-                }
-            }
-        )
-        addSwitch(
-            clipboard, R.string.pref_clip_expire_title, R.string.pref_clip_expire_desc,
-            { prefs.clipExpire },
-            {
-                prefs.clipExpire = it
-                rowClipDays?.let { row -> setRowEnabled(row, it) }
-            }
-        )
-        val daysRow = addSlider(
-            clipboard, R.string.pref_clip_days_title, R.string.pref_clip_days_desc,
-            0, Prefs.CLIP_DAYS.size - 1, 1,
-            { Prefs.CLIP_DAYS.indexOf(prefs.clipExpireDays).coerceAtLeast(0) },
-            { prefs.clipExpireDays = Prefs.CLIP_DAYS[it] },
-            label = { getString(R.string.clip_days_fmt, Prefs.CLIP_DAYS[it]) }
-        )
-        rowClipDays = daysRow
-        setRowEnabled(daysRow, prefs.clipExpire)
-        addAction(
-            clipboard, R.string.pref_clip_clear_title, R.string.pref_clip_clear_desc
-        ) { confirmClearClipboard() }
 
         // Pintasan (gestur)
         addSection(R.string.sec_shortcuts)
@@ -317,9 +280,62 @@ class PreferencesActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Halaman Tools Keyboard: pengaturan alat di bilah atas keyboard (sekarang papan klip). */
+    private fun buildToolsPage() {
+        val intro = addSection(R.string.sub_tools)
+        (intro.layoutParams as LinearLayout.LayoutParams).apply {
+            topMargin = 0
+            bottomMargin = dp(2)
+        }
+
+        // Papan klip: riwayat teks yang disalin (datanya hanya di perangkat)
+        addSection(R.string.sec_clipboard)
+        val clipboard = newCard()
+        addSwitch(
+            clipboard, R.string.pref_clip_title, R.string.pref_clip_desc,
+            { prefs.clipboardHistory }, { prefs.clipboardHistory = it }
+        )
+        swClipShots = addSwitch(
+            clipboard, R.string.pref_shot_title, R.string.pref_shot_desc,
+            { prefs.clipScreenshots && ScreenshotStore.hasPermission(this) },
+            { on ->
+                if (!on) {
+                    prefs.clipScreenshots = false
+                } else if (ScreenshotStore.hasPermission(this)) {
+                    prefs.clipScreenshots = true
+                } else {
+                    // Belum ada izin akses foto: saklar kembali mati, lalu minta izinnya.
+                    swClipShots?.isChecked = false
+                    startActivity(Intent(this, ScreenshotAccessActivity::class.java))
+                }
+            }
+        )
+        addSwitch(
+            clipboard, R.string.pref_clip_expire_title, R.string.pref_clip_expire_desc,
+            { prefs.clipExpire },
+            {
+                prefs.clipExpire = it
+                rowClipDays?.let { row -> setRowEnabled(row, it) }
+            }
+        )
+        val daysRow = addSlider(
+            clipboard, R.string.pref_clip_days_title, R.string.pref_clip_days_desc,
+            0, Prefs.CLIP_DAYS.size - 1, 1,
+            { Prefs.CLIP_DAYS.indexOf(prefs.clipExpireDays).coerceAtLeast(0) },
+            { prefs.clipExpireDays = Prefs.CLIP_DAYS[it] },
+            label = { getString(R.string.clip_days_fmt, Prefs.CLIP_DAYS[it]) }
+        )
+        rowClipDays = daysRow
+        setRowEnabled(daysRow, prefs.clipExpire)
+        addAction(
+            clipboard, R.string.pref_clip_clear_title, R.string.pref_clip_clear_desc
+        ) { confirmClearClipboard() }
+    }
+
     override fun onResume() {
         super.onResume()
-        // Izin foto bisa diberi atau dicabut di luar layar ini: samakan saklar screenshot.
+        // Izin foto bisa diberi atau dicabut di luar layar ini: samakan saklar screenshot
+        // (saklarnya hanya ada di halaman Tools Keyboard).
         swClipShots?.isChecked = prefs.clipScreenshots && ScreenshotStore.hasPermission(this)
     }
 
@@ -420,4 +436,10 @@ class PreferencesActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    companion object {
+        /** Isi: [PAGE_TOOLS] untuk halaman Tools Keyboard; kosong untuk Preferences Typing. */
+        const val EXTRA_PAGE = "page"
+        const val PAGE_TOOLS = "tools"
+    }
 }

@@ -24,6 +24,7 @@
             android:src="@drawable/ic_arrow_back" />
 
         <TextView
+            android:id="@+id/pageTitle"
             style="@style/ZekuHeaderTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"

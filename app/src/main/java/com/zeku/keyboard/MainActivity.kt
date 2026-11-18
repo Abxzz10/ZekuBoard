@@ -40,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStep1: TextView
     private lateinit var btnStep2: TextView
     private lateinit var cardPrefs: View
+    private lateinit var cardTools: View
 
     private lateinit var optDark: View
     private lateinit var optLight: View
@@ -92,6 +93,7 @@ class MainActivity : AppCompatActivity() {
         btnStep1 = findViewById(R.id.btnStep1)
         btnStep2 = findViewById(R.id.btnStep2)
         cardPrefs = findViewById(R.id.cardPrefs)
+        cardTools = findViewById(R.id.cardTools)
 
         optDark = findViewById(R.id.optDark)
         optLight = findViewById(R.id.optLight)
@@ -117,6 +119,12 @@ class MainActivity : AppCompatActivity() {
         }
         cardPrefs.setOnClickListener {
             startActivity(Intent(this, PreferencesActivity::class.java))
+        }
+        cardTools.setOnClickListener {
+            startActivity(
+                Intent(this, PreferencesActivity::class.java)
+                    .putExtra(PreferencesActivity.EXTRA_PAGE, PreferencesActivity.PAGE_TOOLS)
+            )
         }
 
         optDark.setOnClickListener { chooseTheme(Prefs.THEME_DARK) }

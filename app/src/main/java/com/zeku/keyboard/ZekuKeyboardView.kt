@@ -1960,9 +1960,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
                 refreshClipItems()
             }
             else -> {
-                // Ketuk kartu: tempel teksnya, lalu kembali ke keyboard.
+                // Ketuk kartu: tempel teksnya dan tetap berada di papan klip (tidak kembali ke qwerty).
                 listener?.onKeyText(item.text)
-                closeClipboard()
             }
         }
     }
