@@ -29,7 +29,7 @@
 
     <string name="title_tools">Tools Keyboard</string>
     <string name="tools_card_title">Tools Keyboard</string>
-    <string name="tools_card_desc">Atur papan klip dan alat lainnya di bilah atas keyboard</string>
+    <string name="tools_card_desc">Atur papan klip, kontrol kursor, dan alat lainnya di bilah atas keyboard</string>
     <string name="sub_tools">Atur alat di bilah atas keyboard. Perubahan langsung dipakai keyboard.</string>
     <string name="pref_card_title">Preferences Typing</string>
     <string name="pref_card_desc">Atur tombol, tampilan, pintasan, getar, dan suara</string>
@@ -72,6 +72,16 @@
     <string name="btn_delete">Hapus</string>
     <string name="btn_cancel">Batal</string>
     <string name="toast_learned_cleared">Kata yang dipelajari sudah dihapus</string>
+    <string name="sec_cursor">Kontrol kursor</string>
+    <string name="pref_cursor_title">Kontrol kursor</string>
+    <string name="pref_cursor_desc">Tombol di bilah Tools untuk memindah kursor, memilih teks, menyalin, menempel, dan memotong. Ketuk panah, tahan untuk mengulang.</string>
+    <string name="pref_cursor_repeat_title">Kecepatan ulang panah</string>
+    <string name="pref_cursor_repeat_desc">Jeda antar langkah saat panah ditahan. Makin kecil makin cepat.</string>
+    <string name="edit_select">Pilih</string>
+    <string name="edit_select_all">Pilih semua</string>
+    <string name="edit_cut">Potong</string>
+    <string name="edit_copy">Salin</string>
+    <string name="edit_paste">Tempel</string>
     <string name="sec_clipboard">Papan klip</string>
     <string name="pref_clip_title">Simpan riwayat papan klip</string>
     <string name="pref_clip_desc">Teks yang kamu salin disimpan di perangkat ini supaya bisa ditempel lagi dari Tools keyboard. Tidak dikirim ke mana pun. Teks yang ditandai sensitif oleh aplikasi, seperti sandi dari pengelola sandi, tidak disimpan.</string>

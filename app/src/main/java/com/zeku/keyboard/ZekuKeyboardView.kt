@@ -34,6 +34,9 @@ import kotlin.math.max
 
 enum class ShiftState { OFF, ONCE, LOCK }
 
+/** Aksi di panel kontrol kursor. */
+enum class EditAction { LEFT, RIGHT, UP, DOWN, HOME, END, SELECT_ALL, CUT, COPY, PASTE }
+
 /** Isi bilah atas bila Tools keyboard dan kolom saran kata sama-sama menyala. */
 enum class TopBarMode { TOOLS, SUGGEST }
 
@@ -118,6 +121,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
         /** Pengguna memilih screenshot di papan klip: tempel [uri] sebagai gambar. */
         fun onPasteImage(uri: Uri, mime: String)
+
+        /**
+         * Aksi kontrol kursor. [extend] benar bila mode Pilih menyala: gerakan kursor memperluas
+         * blok teks (seperti menahan Shift).
+         */
+        fun onEditAction(action: EditAction, extend: Boolean)
     }
 
     var listener: Listener? = null
@@ -204,6 +213,26 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var shotScroll = 0f
     private val shotSelected = HashSet<Long>()
     private var shotPromptPressed = false
+
+    // Panel kontrol kursor (alat kedua di bilah Tools).
+    private var cursorToolOn = true
+    private var cursorRepeatMs = Prefs.CURSOR_REPEAT_DEFAULT.toLong()
+    private var editOpen = false
+    private var editSelecting = false
+    private var hasSelection = false
+    private var editDownButton = -1
+    private var editPressedButton = -1
+    private val editRepeatRunnable = object : Runnable {
+        override fun run() {
+            val action = editActionFor(editDownButton) ?: return
+            if (action == EditAction.LEFT || action == EditAction.RIGHT ||
+                action == EditAction.UP || action == EditAction.DOWN
+            ) {
+                listener?.onEditAction(action, editSelecting)
+                repeatHandler.postDelayed(this, cursorRepeatMs)
+            }
+        }
+    }
     private val clipLpRunnable = Runnable { clipLongPress() }
 
     // Ketukan pada tombol alat di bilah Tools.
@@ -307,6 +336,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
         soundGain = (prefs.soundVolume / 100f).coerceIn(0f, 1f)
         emojiOn = prefs.emoji
         if (!emojiOn) emojiOpen = false
+        cursorToolOn = prefs.cursorTool
+        cursorRepeatMs = prefs.cursorRepeatMs.toLong()
+        if (!cursorToolOn) editOpen = false
         numberRowOn = prefs.numberRow
         commaOn = prefs.commaKey
         periodOn = prefs.periodKey
@@ -420,7 +452,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         updateMetrics()
         // Panel emoji butuh paling sedikit 5 baris tinggi supaya kisinya cukup lega.
-        val rowCount = if (emojiOpen || clipOpen) max(rows.size, PANEL_MIN_ROWS) else rows.size
+        val rowCount = if (emojiOpen || clipOpen || editOpen) max(rows.size, PANEL_MIN_ROWS) else rows.size
         val h = (rowHeight * rowCount + topTotal + bottomPad).toInt()
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), h)
     }
@@ -479,6 +511,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
             drawClipboardPanel(canvas)
             return
         }
+        if (editOpen) {
+            drawEditPanel(canvas)
+            return
+        }
         drawTopBars(canvas)
         for (box in boxes) drawKey(canvas, box)
         previewBox?.let { drawPreview(canvas, it) }
@@ -521,10 +557,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun drawToolsBar(canvas: Canvas, top: Float, bottom: Float) {
         for (i in 0 until TOOLS_PLACEHOLDER_COUNT) {
             val rect = toolSlotRect(i, top, bottom) ?: break
-            if (i == 0) {
-                fillPaint.color = if (toolPressed) palette.keyPressed else palette.key
+            val res = toolIcon(i)
+            if (res != null) {
+                fillPaint.color = if (toolPressed && toolDownSlot == i) palette.keyPressed else palette.key
                 canvas.drawRoundRect(rect, radius, radius, fillPaint)
-                drawIconAt(canvas, rect.centerX(), rect.centerY(), R.drawable.ic_kb_clipboard, rect.width() * 0.56f)
+                drawIconAt(canvas, rect.centerX(), rect.centerY(), res, rect.width() * 0.56f)
             } else {
                 fillPaint.color = (palette.key and 0x00FFFFFF) or (0x66 shl 24)
                 canvas.drawRoundRect(rect, radius, radius, fillPaint)
@@ -532,17 +569,29 @@ class ZekuKeyboardView(context: Context) : View(context) {
         }
     }
 
+    /** Ikon alat di kotak ke-[slot], atau null bila kotak itu belum berisi alat (atau alatnya dimatikan). */
+    private fun toolIcon(slot: Int): Int? = when (slot) {
+        0 -> R.drawable.ic_kb_clipboard
+        1 -> if (cursorToolOn) R.drawable.ic_kb_cursor else null
+        else -> null
+    }
+
     /** Nomor kotak alat di titik sentuh (hanya yang bisa diketuk), atau -1. */
     private fun toolSlotAt(x: Float, y: Float): Int {
         if (barH <= 0f || activeTopBar() != TopBarMode.TOOLS || y < 0f || y >= barH) return -1
-        val rect = toolSlotRect(0, 0f, barH) ?: return -1
         val gap = dp(10f)
-        return if (x >= rect.left - gap / 2f && x <= rect.right + gap / 2f) 0 else -1
+        for (i in 0 until TOOLS_PLACEHOLDER_COUNT) {
+            if (toolIcon(i) == null) continue
+            val rect = toolSlotRect(i, 0f, barH) ?: break
+            if (x >= rect.left - gap / 2f && x <= rect.right + gap / 2f) return i
+        }
+        return -1
     }
 
     private fun openTool(slot: Int) {
         when (slot) {
             0 -> openClipboard()
+            1 -> openEdit()
         }
     }
 
@@ -708,6 +757,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (emojiOpen) return handleEmojiTouch(event)
         if (clipOpen) return handleClipboardTouch(event)
+        if (editOpen) return handleEditTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelTouches()
@@ -1005,6 +1055,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun openEmoji() {
         if (emojiOpen) return
         closeClipboard()
+        closeEdit()
         cancelTouches()
         if (emojiLists == null) {
             // Buang emoji yang tidak punya gambar di font perangkat ini.
@@ -1213,11 +1264,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
         clipDownIndex = -1
         clipHeaderTarget = -1
         shotPromptPressed = false
+        editDownButton = -1
+        editPressedButton = -1
         invalidate()
     }
 
     private fun panelCancel() {
         repeatHandler.removeCallbacks(repeatRunnable)
+        repeatHandler.removeCallbacks(editRepeatRunnable)
         repeatHandler.removeCallbacks(clipLpRunnable)
         resetSpaceGesture()
         panelTouchActive = false
@@ -1323,6 +1377,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun openClipboard() {
         if (clipOpen) return
         closeEmoji()
+        closeEdit()
         cancelTouches()
         ClipboardStore.expire(prefs.clipMaxAgeMs())
         clipItems = ClipboardStore.items()
@@ -2002,6 +2057,218 @@ class ZekuKeyboardView(context: Context) : View(context) {
         invalidate()
     }
 
+    // ----------------------------------------------------------- Kontrol kursor
+
+    private fun openEdit() {
+        if (editOpen || !cursorToolOn) return
+        closeEmoji()
+        closeClipboard()
+        cancelTouches()
+        editSelecting = false
+        panelTouchActive = false
+        editOpen = true
+        requestLayout()
+        invalidate()
+    }
+
+    /** Tutup panel kontrol kursor dan kembali ke tombol. */
+    fun closeEdit() {
+        if (!editOpen) return
+        editOpen = false
+        editSelecting = false
+        panelCancel()
+        requestLayout()
+        invalidate()
+    }
+
+    /** Ada teks yang diblok di kolom teks: tombol Pilih semua berubah menjadi Potong. */
+    fun setHasSelection(value: Boolean) {
+        if (hasSelection == value) return
+        hasSelection = value
+        if (editOpen) invalidate()
+    }
+
+    private class EditGeo(val left: Float, val top: Float, val cellW: Float, val cellH: Float, val gap: Float)
+
+    private fun editGeo(g: PanelGeo): EditGeo {
+        val margin = dp(8f)
+        val gap = dp(6f)
+        val top = g.tabsTop
+        val cellH = (g.gridBottom - top - 2 * gap) / 3f
+        val cellW = (width - 2 * margin - 3 * gap) / 4f
+        return EditGeo(margin, top, cellW, cellH, gap)
+    }
+
+    private fun editButtonRect(button: Int, eg: EditGeo): RectF {
+        val left = eg.left + EDIT_COLS[button] * (eg.cellW + eg.gap)
+        val top = eg.top + EDIT_ROWS[button] * (eg.cellH + eg.gap)
+        return RectF(left, top, left + eg.cellW, top + eg.cellH)
+    }
+
+    private fun editButtonAt(x: Float, y: Float, g: PanelGeo): Int {
+        val eg = editGeo(g)
+        for (b in 0 until EDIT_BUTTON_COUNT) {
+            if (editButtonRect(b, eg).contains(x, y)) return b
+        }
+        return -1
+    }
+
+    /** Aksi untuk tombol [button]; null untuk tombol Pilih (hanya mengubah mode). */
+    private fun editActionFor(button: Int): EditAction? = when (button) {
+        EB_HOME -> EditAction.HOME
+        EB_UP -> EditAction.UP
+        EB_END -> EditAction.END
+        EB_LEFT -> EditAction.LEFT
+        EB_RIGHT -> EditAction.RIGHT
+        EB_DOWN -> EditAction.DOWN
+        EB_ALL -> if (hasSelection) EditAction.CUT else EditAction.SELECT_ALL
+        EB_COPY -> EditAction.COPY
+        EB_PASTE -> EditAction.PASTE
+        else -> null
+    }
+
+    private fun isArrowButton(button: Int): Boolean =
+        button == EB_UP || button == EB_DOWN || button == EB_LEFT || button == EB_RIGHT
+
+    /** Jalankan tombol [button]: Pilih mengubah mode, tombol lain mengirim aksinya ke keyboard. */
+    private fun fireEdit(button: Int) {
+        if (button == EB_SELECT) {
+            editSelecting = !editSelecting
+            invalidate()
+            return
+        }
+        val action = editActionFor(button) ?: return
+        listener?.onEditAction(action, editSelecting)
+        // Salin, tempel, potong, dan pilih semua mengakhiri mode Pilih.
+        if (!isArrowButton(button) && button != EB_HOME && button != EB_END) editSelecting = false
+        invalidate()
+    }
+
+    private fun drawEditPanel(canvas: Canvas) {
+        val g = panelGeo()
+        val eg = editGeo(g)
+        for (b in 0 until EDIT_BUTTON_COUNT) {
+            val r = editButtonRect(b, eg)
+            val active = b == EB_SELECT && editSelecting
+            if (active) {
+                // Mode Pilih menyala: warna dibalik supaya jelas.
+                fillPaint.color = palette.text
+                canvas.drawRoundRect(r, radius, radius, fillPaint)
+            } else {
+                drawPanelFace(canvas, r, panelTouchActive && editPressedButton == b)
+            }
+            val fg = if (active) palette.key else palette.text
+            val iconSize = minOf(r.width(), r.height()) * 0.46f
+            val icon = when (b) {
+                EB_HOME -> R.drawable.ic_kb_line_start
+                EB_END -> R.drawable.ic_kb_line_end
+                EB_UP -> R.drawable.ic_kb_arrow_up
+                EB_DOWN -> R.drawable.ic_kb_arrow_down
+                EB_LEFT -> R.drawable.ic_kb_arrow_left
+                EB_RIGHT -> R.drawable.ic_kb_arrow_right
+                else -> 0
+            }
+            if (icon != 0) {
+                drawIconAt(canvas, r.centerX(), r.centerY(), icon, iconSize, tint = fg)
+            } else {
+                val label = when (b) {
+                    EB_SELECT -> R.string.edit_select
+                    EB_ALL -> if (hasSelection) R.string.edit_cut else R.string.edit_select_all
+                    EB_COPY -> R.string.edit_copy
+                    else -> R.string.edit_paste
+                }
+                drawFittedLabel(canvas, r, context.getString(label), fg)
+            }
+        }
+        drawPanelBottomRow(canvas, g)
+    }
+
+    /** Teks di tengah [rect], dikecilkan bila terlalu lebar. */
+    private fun drawFittedLabel(canvas: Canvas, rect: RectF, text: String, color: Int) {
+        var size = rowHeight * 0.3f
+        textPaint.textSize = size
+        val limit = rect.width() * 0.86f
+        while (textPaint.measureText(text) > limit && size > rowHeight * 0.14f) {
+            size -= dp(0.5f)
+            textPaint.textSize = size
+        }
+        textPaint.color = color
+        val y = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2f
+        canvas.drawText(text, rect.centerX(), y, textPaint)
+    }
+
+    private fun handleEditTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> editDown(event.x, event.y)
+            MotionEvent.ACTION_MOVE -> if (panelTouchActive) editMove(event.x, event.y)
+            MotionEvent.ACTION_UP -> {
+                if (panelTouchActive) editUp(event.x, event.y)
+                panelTouchActive = false
+            }
+            MotionEvent.ACTION_CANCEL -> panelCancel()
+        }
+        return true
+    }
+
+    private fun editDown(x: Float, y: Float) {
+        val g = panelGeo()
+        panelTouchActive = true
+        panelPressedBottom = -1
+        editDownButton = -1
+        editPressedButton = -1
+        if (y >= g.gridBottom) {
+            panelRegion = PANEL_BOTTOM
+            panelBottomDown(x)
+        } else {
+            panelRegion = PANEL_GRID
+            val b = editButtonAt(x, y, g)
+            if (b >= 0) {
+                editDownButton = b
+                editPressedButton = b
+                if (isArrowButton(b)) {
+                    // Panah langsung bergerak, dan terus berulang selama ditahan.
+                    feedback(KeyType.CHARACTER)
+                    fireEdit(b)
+                    repeatHandler.removeCallbacks(editRepeatRunnable)
+                    repeatHandler.postDelayed(editRepeatRunnable, longPressDelay)
+                }
+            }
+        }
+        invalidate()
+    }
+
+    private fun editMove(x: Float, y: Float) {
+        when (panelRegion) {
+            PANEL_BOTTOM -> panelBottomMove(x)
+            PANEL_GRID -> {
+                if (editDownButton >= 0 && editButtonAt(x, y, panelGeo()) != editDownButton) {
+                    // Jari keluar dari tombol: batal dan berhenti mengulang.
+                    repeatHandler.removeCallbacks(editRepeatRunnable)
+                    editDownButton = -1
+                    editPressedButton = -1
+                    invalidate()
+                }
+            }
+        }
+    }
+
+    private fun editUp(x: Float, y: Float) {
+        val g = panelGeo()
+        when (panelRegion) {
+            PANEL_BOTTOM -> panelBottomUp(x) { closeEdit() }
+            PANEL_GRID -> {
+                repeatHandler.removeCallbacks(editRepeatRunnable)
+                val b = editDownButton
+                // Tombol selain panah bekerja saat dilepas di tombol yang sama.
+                if (b >= 0 && !isArrowButton(b) && editButtonAt(x, y, g) == b) {
+                    feedback(KeyType.CHARACTER)
+                    fireEdit(b)
+                }
+            }
+        }
+        if (editOpen) panelReset()
+    }
+
     // ------------------------------------------------------------ Gestur spasi
 
     private fun moveSpace(x: Float) {
@@ -2159,6 +2426,21 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val PANEL_TAB = 1
         const val PANEL_BOTTOM = 2
         const val PANEL_GRID = 3
+
+        // Tombol di panel kontrol kursor: posisi (kolom, baris) di kisi 4 x 3.
+        const val EB_HOME = 0
+        const val EB_UP = 1
+        const val EB_END = 2
+        const val EB_LEFT = 3
+        const val EB_SELECT = 4
+        const val EB_RIGHT = 5
+        const val EB_DOWN = 6
+        const val EB_ALL = 7
+        const val EB_COPY = 8
+        const val EB_PASTE = 9
+        const val EDIT_BUTTON_COUNT = 10
+        val EDIT_COLS = intArrayOf(0, 1, 2, 0, 1, 2, 1, 3, 3, 3)
+        val EDIT_ROWS = intArrayOf(0, 0, 0, 1, 1, 1, 2, 0, 1, 2)
 
         // Penanda sasaran ketuk di judul papan klip: tombol mode Teks (10) dan Screenshot (11).
         const val CLIP_TARGET_MODE = 10

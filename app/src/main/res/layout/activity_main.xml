@@ -225,20 +225,13 @@
                         android:tint="@color/muted" />
                 </LinearLayout>
 
-                <!-- Garis pembatas B | B2 -->
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginHorizontal="4dp"
-                    android:layout_marginVertical="18dp"
-                    android:background="@color/line" />
-
-                <!-- B2. Tools Keyboard -->
+                <!-- B2. Tools Keyboard (satu jenis pengaturan dengan Preferences Typing: tanpa garis pembatas) -->
                 <LinearLayout
                     android:id="@+id/cardTools"
                     style="@style/ZekuCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"

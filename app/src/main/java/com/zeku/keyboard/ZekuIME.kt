@@ -1,6 +1,8 @@
 package com.zeku.keyboard
 
+import android.content.ClipData
 import android.content.ClipDescription
+import android.os.SystemClock
 import android.content.ClipboardManager
 import android.net.Uri
 import android.os.Build
@@ -87,6 +89,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         super.onStartInputView(info, restarting)
         trackedStart = info?.initialSelStart ?: -1
         trackedEnd = info?.initialSelEnd ?: -1
+        keyboardView?.setHasSelection(trackedStart >= 0 && trackedEnd >= 0 && trackedStart != trackedEnd)
         suggestionsAllowed = suggestionsAllowedFor(info?.inputType ?: InputType.TYPE_NULL)
         captureClipboard(fromListener = false)
         ClipboardStore.expire(prefs.clipMaxAgeMs())
@@ -102,6 +105,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             view.resetTopBar()
             view.closeEmoji()
             view.closeClipboard()
+            view.closeEdit()
         }
         refreshAutoShift()
         applyNavigationBar()
@@ -131,6 +135,8 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         )
         trackedStart = newSelStart
         trackedEnd = newSelEnd
+        // Ada blok teks atau tidak: dipakai tombol Pilih semua / Potong di panel kontrol kursor.
+        keyboardView?.setHasSelection(newSelStart >= 0 && newSelEnd >= 0 && newSelStart != newSelEnd)
         // Kursor berpindah (ketik, hapus, geser, ketuk di teks, atau kolom dikosongkan aplikasi):
         // bilah atas dan saran dihitung ulang dari teks di sekitar kursor.
         refreshSuggestions(userDriven = newSelStart != oldSelStart || newSelEnd != oldSelEnd)
@@ -391,6 +397,67 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         }
         if (text.isNullOrEmpty()) return
         ClipboardStore.capture(text, fromListener)
+    }
+
+    /** Aksi dari panel kontrol kursor: gerak kursor, pilih, salin, tempel, potong. */
+    override fun onEditAction(action: EditAction, extend: Boolean) {
+        val ic = currentInputConnection ?: return
+        when (action) {
+            EditAction.LEFT -> sendNavKey(ic, KeyEvent.KEYCODE_DPAD_LEFT, extend)
+            EditAction.RIGHT -> sendNavKey(ic, KeyEvent.KEYCODE_DPAD_RIGHT, extend)
+            EditAction.UP -> sendNavKey(ic, KeyEvent.KEYCODE_DPAD_UP, extend)
+            EditAction.DOWN -> sendNavKey(ic, KeyEvent.KEYCODE_DPAD_DOWN, extend)
+            EditAction.HOME -> sendNavKey(ic, KeyEvent.KEYCODE_MOVE_HOME, extend)
+            EditAction.END -> sendNavKey(ic, KeyEvent.KEYCODE_MOVE_END, extend)
+            EditAction.SELECT_ALL -> selectAllText(ic)
+            EditAction.COPY -> copySelection(ic, cut = false)
+            EditAction.CUT -> copySelection(ic, cut = true)
+            EditAction.PASTE -> pasteFromClipboard(ic)
+        }
+        refreshAutoShift()
+        refreshSuggestions()
+    }
+
+    /** Kirim tombol arah. [extend] menahan Shift supaya blok teks ikut diperluas. */
+    private fun sendNavKey(ic: InputConnection, keyCode: Int, extend: Boolean) {
+        val now = SystemClock.uptimeMillis()
+        val meta = if (extend) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0
+        if (extend) {
+            ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0, meta))
+        }
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, meta))
+        if (extend) {
+            ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0, 0))
+        }
+    }
+
+    private fun selectAllText(ic: InputConnection) {
+        if (ic.performContextMenuAction(android.R.id.selectAll)) return
+        // Cadangan bila kolom teks tidak mengerti aksi menu: blok dari awal sampai akhir teks.
+        val text = ic.getExtractedText(ExtractedTextRequest(), 0)?.text ?: return
+        ic.setSelection(0, text.length)
+    }
+
+    /** Salin teks yang diblok ke papan klip sistem (tercatat juga di papan klip keyboard); [cut] juga menghapusnya. */
+    private fun copySelection(ic: InputConnection, cut: Boolean) {
+        val selected = ic.getSelectedText(0)?.toString()
+        if (selected.isNullOrEmpty()) return
+        clipboardManager?.setPrimaryClip(ClipData.newPlainText("", selected))
+        if (cut) ic.commitText("", 1)
+    }
+
+    /** Tempel teks dari papan klip sistem; bila ada blok teks, blok itu diganti. */
+    private fun pasteFromClipboard(ic: InputConnection) {
+        val clip: ClipData? = try {
+            clipboardManager?.primaryClip
+        } catch (e: Exception) {
+            null
+        }
+        if (clip == null || clip.itemCount == 0) return
+        val text = clip.getItemAt(0).coerceToText(this)?.toString()
+        if (text.isNullOrEmpty()) return
+        ic.commitText(text, 1)
     }
 
     /** Tempel screenshot dari papan klip sebagai gambar, bila kolom teks menerima gambar. */

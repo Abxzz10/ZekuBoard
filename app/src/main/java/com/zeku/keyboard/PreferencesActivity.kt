@@ -38,6 +38,7 @@ class PreferencesActivity : AppCompatActivity() {
     private var rowVibrate: View? = null
     private var rowVolume: View? = null
     private var rowClipDays: View? = null
+    private var rowCursorRepeat: View? = null
     private var swClipShots: MaterialSwitch? = null
 
     private val vibrator: Vibrator? by lazy { createVibrator() }
@@ -287,6 +288,26 @@ class PreferencesActivity : AppCompatActivity() {
             topMargin = 0
             bottomMargin = dp(2)
         }
+
+        // Kontrol kursor: panel panah, pilih, salin, tempel, potong
+        addSection(R.string.sec_cursor)
+        val cursor = newCard()
+        addSwitch(
+            cursor, R.string.pref_cursor_title, R.string.pref_cursor_desc,
+            { prefs.cursorTool },
+            {
+                prefs.cursorTool = it
+                rowCursorRepeat?.let { row -> setRowEnabled(row, it) }
+            }
+        )
+        val repeatRow = addSlider(
+            cursor, R.string.pref_cursor_repeat_title, R.string.pref_cursor_repeat_desc,
+            Prefs.CURSOR_REPEAT_MIN, Prefs.CURSOR_REPEAT_MAX, Prefs.CURSOR_REPEAT_STEP,
+            { prefs.cursorRepeatMs }, { prefs.cursorRepeatMs = it },
+            R.string.ms_fmt
+        )
+        rowCursorRepeat = repeatRow
+        setRowEnabled(repeatRow, prefs.cursorTool)
 
         // Papan klip: riwayat teks yang disalin (datanya hanya di perangkat)
         addSection(R.string.sec_clipboard)

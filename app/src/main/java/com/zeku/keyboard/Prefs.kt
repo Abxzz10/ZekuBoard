@@ -165,6 +165,16 @@ class Prefs(context: Context) {
             0L
         }
 
+    /** Tombol kontrol kursor di bilah Tools (panah, pilih, salin, tempel, potong). */
+    var cursorTool: Boolean
+        get() = readBool(KEY_CURSOR_TOOL, true)
+        set(value) = writeBool(KEY_CURSOR_TOOL, value)
+
+    /** Jeda antar langkah saat panah kontrol kursor ditahan, dalam milidetik. Makin kecil makin cepat. */
+    var cursorRepeatMs: Int
+        get() = readInt(KEY_CURSOR_REPEAT, CURSOR_REPEAT_DEFAULT, CURSOR_REPEAT_MIN, CURSOR_REPEAT_MAX)
+        set(value) = writeInt(KEY_CURSOR_REPEAT, value, CURSOR_REPEAT_MIN, CURSOR_REPEAT_MAX)
+
     /** Simpan riwayat papan klip (teks yang disalin) di perangkat untuk ditempel lagi. */
     var clipboardHistory: Boolean
         get() = readBool(KEY_CLIPBOARD, true)
@@ -315,6 +325,12 @@ class Prefs(context: Context) {
         const val WIDTH_DEFAULT = 100
         const val WIDTH_STEP = 5
 
+        // Jeda ulang panah kontrol kursor (ms).
+        const val CURSOR_REPEAT_MIN = 30
+        const val CURSOR_REPEAT_MAX = 150
+        const val CURSOR_REPEAT_DEFAULT = 60
+        const val CURSOR_REPEAT_STEP = 10
+
         // Pilihan lama isi papan klip bertahan, dalam hari.
         val CLIP_DAYS = intArrayOf(1, 5, 7, 14, 30)
         const val CLIP_DAYS_DEFAULT = 7
@@ -368,6 +384,8 @@ class Prefs(context: Context) {
         private const val KEY_LEARN_TYPING = "learn_typing"
         private const val KEY_EMOJI = "emoji_enabled"
         private const val KEY_CLIPBOARD = "clipboard_history"
+        private const val KEY_CURSOR_TOOL = "cursor_tool"
+        private const val KEY_CURSOR_REPEAT = "cursor_repeat_ms"
         private const val KEY_CLIP_EXPIRE = "clip_expire"
         private const val KEY_CLIP_DAYS = "clip_expire_days"
         private const val KEY_CLIP_SHOTS = "clip_screenshots"
@@ -383,7 +401,7 @@ class Prefs(context: Context) {
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,
             KEY_CHAR_PREVIEW, KEY_KEY_POPUP, KEY_VIBRATE_STRENGTH, KEY_SOUND_VOLUME,
             KEY_LP_DELAY, KEY_TOOLS_BAR, KEY_SUGGESTION_BAR, KEY_LEARN_TYPING, KEY_EMOJI, KEY_CLIPBOARD,
-            KEY_CLIP_EXPIRE, KEY_CLIP_DAYS
+            KEY_CLIP_EXPIRE, KEY_CLIP_DAYS, KEY_CURSOR_TOOL, KEY_CURSOR_REPEAT
         )
     }
 }
