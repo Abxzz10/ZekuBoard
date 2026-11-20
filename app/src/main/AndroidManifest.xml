@@ -37,6 +37,14 @@
             android:exported="true"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Kotak isian untuk menambah teks ke papan klip dari tombol + -->
+        <activity
+            android:name=".AddClipActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Layar tanpa tampilan untuk meminta izin akses foto dari keyboard -->
         <activity
             android:name=".ScreenshotAccessActivity"

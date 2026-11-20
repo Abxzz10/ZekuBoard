@@ -107,6 +107,14 @@ object ClipboardStore {
         add(text)
     }
 
+    /** Tambah teks buatan pengguna (dari tombol +), lalu simpan. Aman dipanggil walau riwayat belum dimuat. */
+    fun addText(context: Context, text: String) {
+        loadAsync(context) {
+            add(text)
+            flush()
+        }
+    }
+
     private fun add(text: String) {
         if (text.isBlank() || text.length > MAX_TEXT) return
         var id = nextId

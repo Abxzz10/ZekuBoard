@@ -97,8 +97,11 @@
     <string name="pref_clip_days_title">Hilang setelah</string>
     <string name="pref_clip_days_desc">Lama teks dan screenshot bertahan di papan klip</string>
     <string name="clip_days_fmt">%1$d hari</string>
-    <string name="clip_tab_text">Teks</string>
-    <string name="clip_tab_shot">Screenshot</string>
+    <string name="edit_title">Kontrol kursor</string>
+    <string name="clip_add_title">Tambah ke papan klip</string>
+    <string name="clip_add_hint">Ketik atau tempel teks</string>
+    <string name="toast_clip_added">Tersimpan di papan klip</string>
+    <string name="btn_save">Simpan</string>
     <string name="shot_empty">Belum ada screenshot baru. Screenshot yang kamu ambil akan muncul di sini.</string>
     <string name="shot_need_access">Izinkan akses foto untuk menampilkan screenshot terbaru.</string>
     <string name="shot_grant">Beri izin</string>
