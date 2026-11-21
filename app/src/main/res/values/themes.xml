@@ -21,4 +21,14 @@
         <item name="android:navigationBarColor">@color/bg</item>
     </style>
 
+    <!-- Kotak "Tambah ke papan klip": kartu di atas latar redup, gaya sama dengan aplikasi -->
+    <style name="Theme.ZekuBoard.AddClip" parent="Theme.ZekuBoard">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
 </resources>

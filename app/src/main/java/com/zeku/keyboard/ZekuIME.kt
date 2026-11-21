@@ -106,6 +106,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             view.closeEmoji()
             view.closeClipboard()
             view.closeEdit()
+            view.closeResize()
         }
         refreshAutoShift()
         applyNavigationBar()

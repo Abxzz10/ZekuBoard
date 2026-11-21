@@ -18,6 +18,22 @@ class Prefs(context: Context) {
     private val sp = context.applicationContext
         .getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
+    init {
+        // Riwayat papan klip menyala sebagai bawaan. Sekali saja, nyalakan juga di perangkat yang
+        // sebelumnya tersimpan mati; sesudah itu pilihan pengguna dihormati seperti biasa.
+        val done = try {
+            sp.getBoolean(KEY_CLIP_HISTORY_MIGRATED, false)
+        } catch (e: ClassCastException) {
+            false
+        }
+        if (!done) {
+            sp.edit()
+                .putBoolean(KEY_CLIPBOARD, true)
+                .putBoolean(KEY_CLIP_HISTORY_MIGRATED, true)
+                .apply()
+        }
+    }
+
     // ------------------------------------------------------------ Pembaca aman
 
     private fun readBool(key: String, def: Boolean): Boolean =
@@ -192,6 +208,11 @@ class Prefs(context: Context) {
             sp.edit().putString(KEY_EMOJI_RECENTS, value).apply()
         }
 
+    /** Seberapa tinggi keyboard dinaikkan dari tepi bawah layar, dalam dp (0 sampai [KB_OFFSET_MAX_DP]). */
+    var keyboardOffsetDp: Int
+        get() = readInt(KEY_KB_OFFSET, 0, 0, KB_OFFSET_MAX_DP)
+        set(value) = writeInt(KEY_KB_OFFSET, value, 0, KB_OFFSET_MAX_DP)
+
     /** Bilah Tools keyboard di atas tombol (isinya menyusul). Menambah tinggi keyboard. */
     var toolsBar: Boolean
         get() = readBool(KEY_TOOLS_BAR, true)
@@ -315,9 +336,12 @@ class Prefs(context: Context) {
         const val FONT_DEFAULT = 100
         const val FONT_STEP = 5
 
-        const val HEIGHT_MIN = 80
-        const val HEIGHT_MAX = 120
+        const val HEIGHT_MIN = 70
+        const val HEIGHT_MAX = 140
         const val HEIGHT_DEFAULT = 100
+
+        // Batas menaikkan keyboard dari tepi bawah (dp), dipakai mode Ubah ukuran.
+        const val KB_OFFSET_MAX_DP = 120
         const val HEIGHT_STEP = 5
 
         const val WIDTH_MIN = 70
@@ -359,6 +383,7 @@ class Prefs(context: Context) {
         private const val KEY_VIBRATE = "vibrate"
         private const val KEY_SOUND = "sound"
         private const val KEY_HEIGHT = "height_percent"
+        private const val KEY_KB_OFFSET = "kb_offset_dp"
         private const val KEY_GESTURE_SPACE = "gesture_space"
         private const val KEY_GESTURE_SELECT = "gesture_select"
 
@@ -384,6 +409,7 @@ class Prefs(context: Context) {
         private const val KEY_LEARN_TYPING = "learn_typing"
         private const val KEY_EMOJI = "emoji_enabled"
         private const val KEY_CLIPBOARD = "clipboard_history"
+        private const val KEY_CLIP_HISTORY_MIGRATED = "clip_history_default_on"
         private const val KEY_CURSOR_TOOL = "cursor_tool"
         private const val KEY_CURSOR_REPEAT = "cursor_repeat_ms"
         private const val KEY_CLIP_EXPIRE = "clip_expire"
@@ -395,7 +421,7 @@ class Prefs(context: Context) {
 
         /** Semua kunci pengaturan mengetik (semua kecuali tema). */
         private val TYPING_KEYS = listOf(
-            KEY_VIBRATE, KEY_SOUND, KEY_HEIGHT, KEY_GESTURE_SPACE, KEY_GESTURE_SELECT,
+            KEY_VIBRATE, KEY_SOUND, KEY_HEIGHT, KEY_KB_OFFSET, KEY_GESTURE_SPACE, KEY_GESTURE_SELECT,
             KEY_NUMBER_ROW, KEY_NUMBER_ROW_SYMBOLS, KEY_COMMA, KEY_PERIOD,
             KEY_LP_NUMBERS, KEY_FONT, KEY_WIDTH, KEY_ONE_HAND,
             KEY_AUTO_CAP, KEY_SENTENCE_CAP, KEY_DOUBLE_SPACE, KEY_AUTO_SPACE,

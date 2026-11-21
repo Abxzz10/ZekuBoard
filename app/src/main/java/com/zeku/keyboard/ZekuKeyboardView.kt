@@ -32,6 +32,7 @@ import androidx.core.content.ContextCompat
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 enum class ShiftState { OFF, ONCE, LOCK }
 
@@ -224,6 +225,15 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var editDownButton = -1
     private var editPressedButton = -1
     private var editTopTarget = -1
+
+    // Mode Ubah ukuran: tinggi dan posisi naik-turun keyboard, di bawah lapisan gelap.
+    private var resizeOpen = false
+    private var resizeMode = RESIZE_NONE
+    private var resizeButtonDown = -1
+    private var resizeStartRawY = 0f
+    private var resizeStartPercent = 100f
+    private var resizeStartOffset = 0f
+    private var kbOffsetDp = 0f
     private val editRepeatRunnable = object : Runnable {
         override fun run() {
             val action = editActionFor(editDownButton) ?: return
@@ -346,7 +356,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
         periodOn = prefs.periodKey
         toolsOn = prefs.toolsBar
         suggestOn = prefs.suggestionBar
-        heightScale = prefs.heightPercent.coerceIn(80, 120) / 100f
+        if (!resizeOpen) {
+            heightScale = prefs.heightPercent.coerceIn(Prefs.HEIGHT_MIN, Prefs.HEIGHT_MAX) / 100f
+            kbOffsetDp = prefs.keyboardOffsetDp.toFloat()
+        }
         isDarkTheme = when (prefs.theme) {
             Prefs.THEME_DARK -> true
             Prefs.THEME_LIGHT -> false
@@ -438,7 +451,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         rowHeight = dp(if (landscape) 38f else 50f) * heightScale
         topPad = dp(8f)
-        bottomPad = dp(6f)
+        bottomPad = dp(6f) + dp(kbOffsetDp)
         sidePad = dp(if (landscape) 16f else 4f)
         hInset = dp(3f)
         vInset = dp(if (landscape) 3f else 4f)
@@ -520,6 +533,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         drawTopBars(canvas)
         for (box in boxes) drawKey(canvas, box)
         previewBox?.let { drawPreview(canvas, it) }
+        if (resizeOpen) drawResizeOverlay(canvas)
     }
 
     /** Tampilan sementara bilah atas: hanya penanda ruang, belum ada isi dan belum bisa disentuh. */
@@ -575,6 +589,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun toolIcon(slot: Int): Int? = when (slot) {
         0 -> R.drawable.ic_kb_clipboard
         1 -> if (cursorToolOn) R.drawable.ic_kb_cursor else null
+        2 -> R.drawable.ic_kb_resize
         else -> null
     }
 
@@ -594,6 +609,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         when (slot) {
             0 -> openClipboard()
             1 -> openEdit()
+            2 -> openResize()
         }
     }
 
@@ -757,6 +773,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     // ---------------------------------------------------------------- Sentuhan
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (resizeOpen) return handleResizeTouch(event)
         if (emojiOpen) return handleEmojiTouch(event)
         if (clipOpen) return handleClipboardTouch(event)
         if (editOpen) return handleEditTouch(event)
@@ -1056,6 +1073,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun openEmoji() {
         if (emojiOpen) return
+        closeResize()
         closeClipboard()
         closeEdit()
         cancelTouches()
@@ -1391,6 +1409,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun openClipboard() {
         if (clipOpen) return
+        closeResize()
         closeEmoji()
         closeEdit()
         cancelTouches()
@@ -2162,6 +2181,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     private fun openEdit() {
         if (editOpen || !cursorToolOn) return
+        closeResize()
         closeEmoji()
         closeClipboard()
         cancelTouches()
@@ -2195,16 +2215,48 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val margin = dp(8f)
         val gap = dp(6f)
         val top = g.gridTop
-        val cellH = (g.gridBottom - top - 2 * gap) / 3f
+        val cellH = (g.gridBottom - top - 3 * gap) / 4f
         val cellW = (width - 2 * margin - 3 * gap) / 4f
         return EditGeo(margin, top, cellW, cellH, gap)
     }
 
-    private fun editButtonRect(button: Int, eg: EditGeo): RectF {
-        val left = eg.left + EDIT_COLS[button] * (eg.cellW + eg.gap)
-        val top = eg.top + EDIT_ROWS[button] * (eg.cellH + eg.gap)
-        return RectF(left, top, left + eg.cellW, top + eg.cellH)
+    /** Kotak tombol: kolom [col], baris [row], melebar [cs] kolom dan [rs] baris. */
+    private fun editSpan(eg: EditGeo, col: Int, row: Int, cs: Int, rs: Int): RectF {
+        val left = eg.left + col * (eg.cellW + eg.gap)
+        val top = eg.top + row * (eg.cellH + eg.gap)
+        return RectF(
+            left, top,
+            left + cs * eg.cellW + (cs - 1) * eg.gap,
+            top + rs * eg.cellH + (rs - 1) * eg.gap
+        )
     }
+
+    private fun editButtonRect(button: Int, eg: EditGeo): RectF = when (button) {
+        EB_LEFT -> editSpan(eg, 0, 0, 1, 3)
+        EB_UP -> editSpan(eg, 1, 0, 1, 1)
+        EB_SELECT -> editSpan(eg, 1, 1, 1, 1)
+        EB_DOWN -> editSpan(eg, 1, 2, 1, 1)
+        EB_RIGHT -> editSpan(eg, 2, 0, 1, 3)
+        EB_ALL -> editSpan(eg, 3, 0, 1, 1)
+        EB_COPY -> editSpan(eg, 3, 1, 1, 1)
+        EB_PASTE -> editSpan(eg, 3, 2, 1, 1)
+        EB_DELETE -> editSpan(eg, 3, 3, 1, 1)
+        else -> {
+            // Baris bawah: Awal dan Akhir membagi dua lebar tiga kolom pertama.
+            val full = editSpan(eg, 0, 3, 3, 1)
+            val half = (full.width() - eg.gap) / 2f
+            if (button == EB_HOME) {
+                RectF(full.left, full.top, full.left + half, full.bottom)
+            } else {
+                RectF(full.right - half, full.top, full.right, full.bottom)
+            }
+        }
+    }
+
+    /** Salin hanya bisa bila ada teks yang diblok (Potong dan lainnya selalu aktif). */
+    private fun editEnabled(button: Int): Boolean = button != EB_COPY || hasSelection
+
+    private fun isRepeatButton(button: Int): Boolean = isArrowButton(button) || button == EB_DELETE
 
     private fun editButtonAt(x: Float, y: Float, g: PanelGeo): Int {
         val eg = editGeo(g)
@@ -2249,29 +2301,26 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val g = panelGeo()
         val eg = editGeo(g)
 
-        // Bilah atas: kembali, nama, dan aksi hapus di kanan.
+        // Bilah atas: kembali dan nama.
         drawToolBarButton(
             canvas, toolBarBackRect(g), R.drawable.ic_kb_back, true,
             panelTouchActive && editTopTarget == EDIT_T_BACK
         )
         drawToolBarTitle(canvas, g, context.getString(R.string.edit_title))
-        drawToolBarButton(
-            canvas, toolBarActionRect(0, g), R.drawable.ic_kb_backspace, true,
-            panelTouchActive && editTopTarget == 0
-        )
 
         for (b in 0 until EDIT_BUTTON_COUNT) {
             val r = editButtonRect(b, eg)
+            val enabled = editEnabled(b)
             val active = b == EB_SELECT && editSelecting
             if (active) {
                 // Mode Pilih menyala: warna dibalik supaya jelas.
                 fillPaint.color = palette.text
                 canvas.drawRoundRect(r, radius, radius, fillPaint)
             } else {
-                drawPanelFace(canvas, r, panelTouchActive && editPressedButton == b)
+                drawPanelFace(canvas, r, enabled && panelTouchActive && editPressedButton == b)
             }
             val fg = if (active) palette.key else palette.text
-            val iconSize = minOf(r.width(), r.height()) * 0.46f
+            val iconSize = minOf(r.width(), r.height()) * 0.42f
             val iconRes = when (b) {
                 EB_HOME -> R.drawable.ic_kb_line_start
                 EB_END -> R.drawable.ic_kb_line_end
@@ -2279,6 +2328,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
                 EB_DOWN -> R.drawable.ic_kb_arrow_down
                 EB_LEFT -> R.drawable.ic_kb_arrow_left
                 EB_RIGHT -> R.drawable.ic_kb_arrow_right
+                EB_DELETE -> R.drawable.ic_kb_backspace
                 else -> 0
             }
             if (iconRes != 0) {
@@ -2290,17 +2340,16 @@ class ZekuKeyboardView(context: Context) : View(context) {
                     EB_COPY -> R.string.edit_copy
                     else -> R.string.edit_paste
                 }
-                drawFittedLabel(canvas, r, context.getString(label), fg)
+                // Tombol yang belum bisa dipakai (Salin tanpa blok teks) redup.
+                val color = if (enabled) fg else (fg and 0x00FFFFFF) or (0x5A shl 24)
+                drawFittedLabel(canvas, r, context.getString(label), color)
             }
         }
     }
 
-    /** Sasaran ketuk di bilah atas kontrol kursor: kembali, hapus (0), atau -1. */
     private fun editTopTargetAt(x: Float, y: Float, g: PanelGeo): Int {
         if (y >= g.tabsBottom + dp(2f)) return -1
-        if (toolBarBackRect(g).padded(dp(3f)).contains(x, y)) return EDIT_T_BACK
-        if (toolBarActionRect(0, g).padded(dp(3f)).contains(x, y)) return 0
-        return -1
+        return if (toolBarBackRect(g).padded(dp(3f)).contains(x, y)) EDIT_T_BACK else -1
     }
 
     /** Teks di tengah [rect], dikecilkan bila terlalu lebar. */
@@ -2340,20 +2389,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (y < g.gridTop) {
             panelRegion = PANEL_TAB
             editTopTarget = editTopTargetAt(x, y, g)
-            if (editTopTarget == 0) {
-                // Hapus: langsung menghapus, dan berulang selama ditahan.
-                feedback(KeyType.DELETE)
-                listener?.onKeyDelete()
-                repeatHandler.removeCallbacks(repeatRunnable)
-                repeatHandler.postDelayed(repeatRunnable, longPressDelay)
-            }
         } else {
             panelRegion = PANEL_GRID
             val b = editButtonAt(x, y, g)
-            if (b >= 0) {
+            if (b >= 0 && editEnabled(b)) {
                 editDownButton = b
                 editPressedButton = b
-                if (isArrowButton(b)) {
+                if (b == EB_DELETE) {
+                    // Hapus: langsung menghapus, dan berulang selama ditahan.
+                    feedback(KeyType.DELETE)
+                    listener?.onKeyDelete()
+                    repeatHandler.removeCallbacks(repeatRunnable)
+                    repeatHandler.postDelayed(repeatRunnable, longPressDelay)
+                } else if (isArrowButton(b)) {
                     // Panah langsung bergerak, dan terus berulang selama ditahan.
                     feedback(KeyType.CHARACTER)
                     fireEdit(b)
@@ -2366,23 +2414,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun editMove(x: Float, y: Float) {
-        when (panelRegion) {
-            PANEL_TAB -> {
-                if (editTopTarget == 0 && editTopTargetAt(x, y, panelGeo()) != 0) {
-                    repeatHandler.removeCallbacks(repeatRunnable)
-                    editTopTarget = -1
-                    invalidate()
-                }
-            }
-            PANEL_GRID -> {
-                if (editDownButton >= 0 && editButtonAt(x, y, panelGeo()) != editDownButton) {
-                    // Jari keluar dari tombol: batal dan berhenti mengulang.
-                    repeatHandler.removeCallbacks(editRepeatRunnable)
-                    editDownButton = -1
-                    editPressedButton = -1
-                    invalidate()
-                }
-            }
+        if (panelRegion != PANEL_GRID) return
+        if (editDownButton >= 0 && editButtonAt(x, y, panelGeo()) != editDownButton) {
+            // Jari keluar dari tombol: batal dan berhenti mengulang.
+            repeatHandler.removeCallbacks(editRepeatRunnable)
+            repeatHandler.removeCallbacks(repeatRunnable)
+            editDownButton = -1
+            editPressedButton = -1
+            invalidate()
         }
     }
 
@@ -2390,7 +2429,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val g = panelGeo()
         when (panelRegion) {
             PANEL_TAB -> {
-                repeatHandler.removeCallbacks(repeatRunnable)
                 if (editTopTarget == EDIT_T_BACK && editTopTargetAt(x, y, g) == EDIT_T_BACK) {
                     feedback(KeyType.CHARACTER)
                     closeEdit()
@@ -2398,15 +2436,234 @@ class ZekuKeyboardView(context: Context) : View(context) {
             }
             PANEL_GRID -> {
                 repeatHandler.removeCallbacks(editRepeatRunnable)
+                repeatHandler.removeCallbacks(repeatRunnable)
                 val b = editDownButton
-                // Tombol selain panah bekerja saat dilepas di tombol yang sama.
-                if (b >= 0 && !isArrowButton(b) && editButtonAt(x, y, g) == b) {
+                // Tombol selain panah dan hapus bekerja saat dilepas di tombol yang sama.
+                if (b >= 0 && !isRepeatButton(b) && editButtonAt(x, y, g) == b) {
                     feedback(KeyType.CHARACTER)
                     fireEdit(b)
                 }
             }
         }
         if (editOpen) panelReset()
+    }
+
+    // ------------------------------------------------------------------ Ubah ukuran
+
+    private fun openResize() {
+        if (resizeOpen) return
+        closeEmoji()
+        closeClipboard()
+        closeEdit()
+        cancelTouches()
+        resizeMode = RESIZE_NONE
+        resizeButtonDown = -1
+        resizeOpen = true
+        invalidate()
+    }
+
+    /** Tutup mode Ubah ukuran dan simpan tinggi dan posisi yang sedang tampil. */
+    fun closeResize() {
+        if (!resizeOpen) return
+        resizeOpen = false
+        resizeMode = RESIZE_NONE
+        resizeButtonDown = -1
+        prefs.heightPercent = (heightScale * 100f).roundToInt()
+        prefs.keyboardOffsetDp = kbOffsetDp.roundToInt()
+        requestLayout()
+        invalidate()
+    }
+
+    private class ResizeGeo(
+        val reset: RectF,
+        val done: RectF,
+        val moveCx: Float,
+        val moveCy: Float,
+        val moveR: Float,
+        val captionBaseline: Float,
+        val percentBaseline: Float
+    )
+
+    /** Letak tulisan dan tombol di tengah bagian keyboard yang terlihat (di atas ruang kosong di bawahnya). */
+    private fun resizeGeo(): ResizeGeo {
+        val cx = width / 2f
+        val usable = height - dp(kbOffsetDp)
+        val cy = usable / 2f
+        val btnW = dp(96f)
+        val btnH = dp(44f)
+        val gap = dp(14f)
+        val moveR = dp(28f)
+        val rowY = cy + dp(30f)
+        val reset = RectF(cx - moveR - gap - btnW, rowY - btnH / 2f, cx - moveR - gap, rowY + btnH / 2f)
+        val done = RectF(cx + moveR + gap, rowY - btnH / 2f, cx + moveR + gap + btnW, rowY + btnH / 2f)
+        return ResizeGeo(reset, done, cx, rowY, moveR, cy - dp(34f), cy - dp(8f))
+    }
+
+    private fun baseRowHeight(): Float {
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        return dp(if (landscape) 38f else 50f)
+    }
+
+    private fun maxOffsetDp(): Float {
+        val d = resources.displayMetrics
+        return minOf(Prefs.KB_OFFSET_MAX_DP.toFloat(), d.heightPixels / d.density * 0.2f)
+    }
+
+    /** Lapisan gelap di atas keyboard, lalu pegangan tinggi, persentase tinggi, dan tombol Reset, geser, Selesai. */
+    private fun drawResizeOverlay(canvas: Canvas) {
+        canvas.drawColor(0xB8000000.toInt())
+        val white = 0xFFFFFFFF.toInt()
+        val g = resizeGeo()
+        val cx = width / 2f
+
+        // Pegangan tinggi di tepi atas.
+        fillPaint.color = (white and 0x00FFFFFF) or (0xE6 shl 24)
+        canvas.drawRoundRect(RectF(cx - dp(32f), dp(10f), cx + dp(32f), dp(16f)), dp(3f), dp(3f), fillPaint)
+        barTextPaint.color = white
+        barTextPaint.textSize = dp(11f)
+        barTextPaint.alpha = 170
+        canvas.drawText(context.getString(R.string.resize_hint), cx, dp(32f), barTextPaint)
+
+        // Nama dan persentase tinggi keyboard.
+        barTextPaint.textSize = dp(12f)
+        barTextPaint.alpha = 200
+        canvas.drawText(context.getString(R.string.resize_caption), cx, g.captionBaseline, barTextPaint)
+        barTextPaint.textSize = dp(24f)
+        barTextPaint.alpha = 255
+        barTextPaint.isFakeBoldText = true
+        canvas.drawText(
+            context.getString(R.string.height_fmt, (heightScale * 100f).roundToInt()),
+            cx, g.percentBaseline, barTextPaint
+        )
+        barTextPaint.isFakeBoldText = false
+
+        drawResizeButton(canvas, g.reset, context.getString(R.string.resize_reset), false, resizeButtonDown == 0)
+        drawResizeButton(canvas, g.done, context.getString(R.string.btn_done), true, resizeButtonDown == 1)
+
+        // Pegangan geser naik-turun: lingkaran dengan tanda perempatan.
+        val moving = resizeMode == RESIZE_MOVE
+        fillPaint.color = if (moving) 0x66FFFFFF else 0x33FFFFFF
+        canvas.drawCircle(g.moveCx, g.moveCy, g.moveR, fillPaint)
+        strokePaint.color = white
+        strokePaint.strokeWidth = dp(1.5f)
+        canvas.drawCircle(g.moveCx, g.moveCy, g.moveR, strokePaint)
+        drawIconAt(canvas, g.moveCx, g.moveCy, R.drawable.ic_kb_move, g.moveR * 1.1f, 255, white)
+    }
+
+    private fun drawResizeButton(canvas: Canvas, r: RectF, label: String, filled: Boolean, pressed: Boolean) {
+        val white = 0xFFFFFFFF.toInt()
+        val corner = r.height() / 2f
+        if (filled) {
+            fillPaint.color = if (pressed) 0xFFDDDDDD.toInt() else white
+            canvas.drawRoundRect(r, corner, corner, fillPaint)
+        } else {
+            if (pressed) {
+                fillPaint.color = 0x33FFFFFF
+                canvas.drawRoundRect(r, corner, corner, fillPaint)
+            }
+            strokePaint.color = white
+            strokePaint.strokeWidth = dp(1.5f)
+            canvas.drawRoundRect(r, corner, corner, strokePaint)
+        }
+        barTextPaint.textSize = dp(14f)
+        barTextPaint.color = if (filled) 0xFF111111.toInt() else white
+        barTextPaint.alpha = 255
+        val y = r.centerY() - (barTextPaint.ascent() + barTextPaint.descent()) / 2f
+        canvas.drawText(label, r.centerX(), y, barTextPaint)
+    }
+
+    private fun handleResizeTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> resizeDown(event.x, event.y, event.rawY)
+            MotionEvent.ACTION_MOVE -> resizeMove(event.x, event.y, event.rawY)
+            MotionEvent.ACTION_UP -> resizeUp(event.x, event.y)
+            MotionEvent.ACTION_CANCEL -> {
+                resizeMode = RESIZE_NONE
+                resizeButtonDown = -1
+                invalidate()
+            }
+        }
+        return true
+    }
+
+    private fun resizeDown(x: Float, y: Float, rawY: Float) {
+        val g = resizeGeo()
+        resizeStartRawY = rawY
+        resizeStartPercent = heightScale * 100f
+        resizeStartOffset = kbOffsetDp
+        resizeButtonDown = -1
+        val dx = x - g.moveCx
+        val dy = y - g.moveCy
+        val reach = g.moveR + dp(10f)
+        resizeMode = when {
+            y < dp(44f) -> RESIZE_HEIGHT
+            dx * dx + dy * dy <= reach * reach -> RESIZE_MOVE
+            g.reset.contains(x, y) -> {
+                resizeButtonDown = 0
+                RESIZE_BUTTON
+            }
+            g.done.contains(x, y) -> {
+                resizeButtonDown = 1
+                RESIZE_BUTTON
+            }
+            else -> RESIZE_NONE
+        }
+        invalidate()
+    }
+
+    private fun resizeMove(x: Float, y: Float, rawY: Float) {
+        when (resizeMode) {
+            RESIZE_HEIGHT -> {
+                // Tarik ke atas: keyboard makin tinggi. Memakai posisi layar (rawY) supaya tidak
+                // ikut bergeser saat keyboard sendiri berubah ukuran.
+                val keysAtFull = baseRowHeight() * rows.size
+                val percent = (resizeStartPercent + (resizeStartRawY - rawY) / keysAtFull * 100f)
+                    .coerceIn(Prefs.HEIGHT_MIN.toFloat(), Prefs.HEIGHT_MAX.toFloat())
+                if (percent != heightScale * 100f) {
+                    heightScale = percent / 100f
+                    requestLayout()
+                    invalidate()
+                }
+            }
+            RESIZE_MOVE -> {
+                // Tarik ke atas: keyboard naik. Tarik ke bawah: turun sampai menempel di tepi bawah.
+                val delta = (resizeStartRawY - rawY) / resources.displayMetrics.density
+                val offset = (resizeStartOffset + delta).coerceIn(0f, maxOffsetDp())
+                if (offset != kbOffsetDp) {
+                    kbOffsetDp = offset
+                    requestLayout()
+                    invalidate()
+                }
+            }
+            RESIZE_BUTTON -> {
+                val g = resizeGeo()
+                val inside = if (resizeButtonDown == 0) g.reset.contains(x, y) else g.done.contains(x, y)
+                if (!inside && resizeButtonDown >= 0) {
+                    resizeButtonDown = -1
+                    invalidate()
+                }
+            }
+        }
+    }
+
+    private fun resizeUp(x: Float, y: Float) {
+        val pressed = resizeButtonDown
+        resizeMode = RESIZE_NONE
+        resizeButtonDown = -1
+        when (pressed) {
+            0 -> {
+                // Reset: tinggi 100% dan keyboard kembali menempel di bawah.
+                feedback(KeyType.CHARACTER)
+                heightScale = Prefs.HEIGHT_DEFAULT / 100f
+                kbOffsetDp = 0f
+                requestLayout()
+            }
+            1 -> {
+                feedback(KeyType.CHARACTER)
+                closeResize()
+            }
+        }
+        invalidate()
     }
 
     // ------------------------------------------------------------ Gestur spasi
@@ -2567,7 +2824,8 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val PANEL_BOTTOM = 2
         const val PANEL_GRID = 3
 
-        // Tombol di panel kontrol kursor: posisi (kolom, baris) di kisi 4 x 3.
+        // Tombol di panel kontrol kursor, tata letak seperti Gboard (kisi 4 kolom x 4 baris):
+        // kiri dan kanan tinggi (3 baris), tengah atas/pilih/bawah, kolom aksi, lalu baris bawah.
         const val EB_HOME = 0
         const val EB_UP = 1
         const val EB_END = 2
@@ -2578,9 +2836,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
         const val EB_ALL = 7
         const val EB_COPY = 8
         const val EB_PASTE = 9
-        const val EDIT_BUTTON_COUNT = 10
-        val EDIT_COLS = intArrayOf(0, 1, 2, 0, 1, 2, 1, 3, 3, 3)
-        val EDIT_ROWS = intArrayOf(0, 0, 0, 1, 1, 1, 2, 0, 1, 2)
+        const val EB_DELETE = 10
+        const val EDIT_BUTTON_COUNT = 11
+
+        // Mode Ubah ukuran: apa yang sedang ditarik.
+        const val RESIZE_NONE = 0
+        const val RESIZE_HEIGHT = 1
+        const val RESIZE_MOVE = 2
+        const val RESIZE_BUTTON = 3
 
         // Penanda sasaran ketuk di bilah atas Tools: tombol kembali. Aksi memakai 0 (hapus), 1 (sematkan), 2 (tambah).
         const val CLIP_T_BACK = 50

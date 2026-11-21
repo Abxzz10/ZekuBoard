@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kotak "Tambah ke papan klip": ketuk di luar kartu untuk menutup -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/addRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#66000000"
+    android:clickable="true"
+    android:focusable="true">
+
+    <LinearLayout
+        android:id="@+id/addCard"
+        style="@style/ZekuCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginHorizontal="20dp"
+        android:layout_marginTop="72dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="18dp">
+
+        <TextView
+            style="@style/ZekuHeaderTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/clip_add_title"
+            android:textSize="18sp" />
+
+        <TextView
+            style="@style/ZekuDesc"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/clip_add_desc" />
+
+        <EditText
+            android:id="@+id/addInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_input"
+            android:gravity="top|start"
+            android:hint="@string/clip_add_hint"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="6"
+            android:minHeight="110dp"
+            android:padding="14dp"
+            android:textColor="@color/fg"
+            android:textColorHint="@color/muted"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/addCancel"
+                style="@style/ZekuBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_btn_done"
+                android:text="@string/btn_cancel"
+                android:textColor="@color/fg" />
+
+            <TextView
+                android:id="@+id/addSave"
+                style="@style/ZekuBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="@string/btn_save" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

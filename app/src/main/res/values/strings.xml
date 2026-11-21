@@ -97,8 +97,12 @@
     <string name="pref_clip_days_title">Hilang setelah</string>
     <string name="pref_clip_days_desc">Lama teks dan screenshot bertahan di papan klip</string>
     <string name="clip_days_fmt">%1$d hari</string>
+    <string name="resize_reset">Reset</string>
+    <string name="resize_caption">Tinggi keyboard</string>
+    <string name="resize_hint">Tarik garis ini untuk mengubah tinggi</string>
     <string name="edit_title">Kontrol kursor</string>
     <string name="clip_add_title">Tambah ke papan klip</string>
+    <string name="clip_add_desc">Teks ini disimpan di papan klip dan bisa ditempel kapan saja.</string>
     <string name="clip_add_hint">Ketik atau tempel teks</string>
     <string name="toast_clip_added">Tersimpan di papan klip</string>
     <string name="btn_save">Simpan</string>
