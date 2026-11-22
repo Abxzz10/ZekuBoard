@@ -181,6 +181,25 @@ class Prefs(context: Context) {
             0L
         }
 
+    /** Bahasa asal terjemahan (kode ML Kit, misalnya "id"). */
+    var translateFrom: String
+        get() = readString(KEY_TR_FROM, "id")
+        set(value) {
+            sp.edit().putString(KEY_TR_FROM, value).apply()
+        }
+
+    /** Bahasa tujuan terjemahan (kode ML Kit, misalnya "en"). */
+    var translateTo: String
+        get() = readString(KEY_TR_TO, "en")
+        set(value) {
+            sp.edit().putString(KEY_TR_TO, value).apply()
+        }
+
+    /** Unduh data bahasa hanya lewat Wi-Fi. */
+    var translateWifiOnly: Boolean
+        get() = readBool(KEY_TR_WIFI, true)
+        set(value) = writeBool(KEY_TR_WIFI, value)
+
     /** Tombol kontrol kursor di bilah Tools (panah, pilih, salin, tempel, potong). */
     var cursorTool: Boolean
         get() = readBool(KEY_CURSOR_TOOL, true)
@@ -411,6 +430,9 @@ class Prefs(context: Context) {
         private const val KEY_CLIPBOARD = "clipboard_history"
         private const val KEY_CLIP_HISTORY_MIGRATED = "clip_history_default_on"
         private const val KEY_CURSOR_TOOL = "cursor_tool"
+        private const val KEY_TR_FROM = "translate_from"
+        private const val KEY_TR_TO = "translate_to"
+        private const val KEY_TR_WIFI = "translate_wifi_only"
         private const val KEY_CURSOR_REPEAT = "cursor_repeat_ms"
         private const val KEY_CLIP_EXPIRE = "clip_expire"
         private const val KEY_CLIP_DAYS = "clip_expire_days"

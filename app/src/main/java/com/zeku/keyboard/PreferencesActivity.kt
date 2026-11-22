@@ -43,21 +43,37 @@ class PreferencesActivity : AppCompatActivity() {
 
     private val vibrator: Vibrator? by lazy { createVibrator() }
 
-    // Activity yang sama dipakai untuk dua halaman: Preferences Typing dan Tools Keyboard.
+    // Activity yang sama dipakai untuk tiga halaman: Preferences Typing, Tools Keyboard, dan Paket Unduhan.
     private var toolsPage = false
+    private var downloadsPage = false
+
+    // Status tiap bahasa di Paket Unduhan: 0 belum diunduh, 1 mengunduh, 2 terunduh, 3 gagal.
+    private val dlState = HashMap<String, Int>()
+    private val dlRows = HashMap<String, View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         toolsPage = intent.getStringExtra(EXTRA_PAGE) == PAGE_TOOLS
+        downloadsPage = intent.getStringExtra(EXTRA_PAGE) == PAGE_DOWNLOADS
         setContentView(R.layout.activity_preferences)
         applySystemBars()
 
         findViewById<TextView>(R.id.pageTitle)
-            .setText(if (toolsPage) R.string.title_tools else R.string.title_preferences)
+            .setText(
+                when {
+                    toolsPage -> R.string.title_tools
+                    downloadsPage -> R.string.title_downloads
+                    else -> R.string.title_preferences
+                }
+            )
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
         container = findViewById(R.id.prefsContainer)
-        if (toolsPage) buildToolsPage() else buildPage()
+        when {
+            toolsPage -> buildToolsPage()
+            downloadsPage -> buildDownloadsPage()
+            else -> buildPage()
+        }
     }
 
     private fun buildPage() {
@@ -353,6 +369,98 @@ class PreferencesActivity : AppCompatActivity() {
         ) { confirmClearClipboard() }
     }
 
+    /** Halaman Paket Unduhan: data bahasa terjemahan, diunduh dan dihapus manual. */
+    private fun buildDownloadsPage() {
+        val intro = addSection(R.string.sub_downloads)
+        (intro.layoutParams as LinearLayout.LayoutParams).apply {
+            topMargin = 0
+            bottomMargin = dp(2)
+        }
+
+        addSection(R.string.sec_translation)
+        val settings = newCard()
+        addSwitch(
+            settings, R.string.pref_dl_wifi_title, R.string.pref_dl_wifi_desc,
+            { prefs.translateWifiOnly }, { prefs.translateWifiOnly = it }
+        )
+
+        addSection(R.string.sec_languages)
+        val card = newCard()
+        for (code in TranslationHelper.languages()) {
+            if (card.childCount > 0) addDivider(card)
+            val row = layoutInflater.inflate(R.layout.item_download_row, card, false)
+            row.findViewById<TextView>(R.id.dlName).text = TranslationHelper.languageName(code)
+            row.findViewById<View>(R.id.dlButton).setOnClickListener { onDownloadButton(code) }
+            dlRows[code] = row
+            dlState[code] = if (code == TranslationHelper.ENGLISH) 2 else 0
+            card.addView(row)
+            refreshDownloadRow(code)
+        }
+
+        addSection(R.string.dl_attribution)
+
+        // Status asli dari perangkat: bahasa mana yang sudah terunduh.
+        TranslationHelper.downloadedModels { have ->
+            for (code in dlRows.keys) {
+                if (dlState[code] != 1) dlState[code] = if (code in have) 2 else 0
+                refreshDownloadRow(code)
+            }
+        }
+    }
+
+    private fun onDownloadButton(code: String) {
+        when (dlState[code]) {
+            1 -> return
+            2 -> {
+                if (code == TranslationHelper.ENGLISH) return
+                TranslationHelper.delete(code) { ok ->
+                    if (ok) dlState[code] = 0
+                    refreshDownloadRow(code)
+                }
+            }
+            else -> {
+                dlState[code] = 1
+                refreshDownloadRow(code)
+                TranslationHelper.download(code, prefs.translateWifiOnly) { ok ->
+                    dlState[code] = if (ok) 2 else 3
+                    refreshDownloadRow(code)
+                }
+            }
+        }
+    }
+
+    private fun refreshDownloadRow(code: String) {
+        val row = dlRows[code] ?: return
+        val status = row.findViewById<TextView>(R.id.dlStatus)
+        val button = row.findViewById<TextView>(R.id.dlButton)
+        val builtIn = code == TranslationHelper.ENGLISH
+        button.visibility = if (builtIn) View.GONE else View.VISIBLE
+        button.isEnabled = true
+        button.alpha = 1f
+        when (dlState[code]) {
+            1 -> {
+                status.setText(
+                    if (prefs.translateWifiOnly) R.string.dl_status_downloading_wifi else R.string.dl_status_downloading
+                )
+                button.setText(R.string.dl_button_wait)
+                button.isEnabled = false
+                button.alpha = 0.5f
+            }
+            2 -> {
+                status.setText(if (builtIn) R.string.dl_status_builtin else R.string.dl_status_done)
+                button.setText(R.string.btn_delete)
+            }
+            3 -> {
+                status.setText(R.string.dl_status_failed)
+                button.setText(R.string.dl_button_retry)
+            }
+            else -> {
+                status.setText(R.string.dl_status_none)
+                button.setText(R.string.dl_button_download)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         // Izin foto bisa diberi atau dicabut di luar layar ini: samakan saklar screenshot
@@ -462,5 +570,8 @@ class PreferencesActivity : AppCompatActivity() {
         /** Isi: [PAGE_TOOLS] untuk halaman Tools Keyboard; kosong untuk Preferences Typing. */
         const val EXTRA_PAGE = "page"
         const val PAGE_TOOLS = "tools"
+
+        /** Isi: [PAGE_DOWNLOADS] untuk halaman Paket Unduhan. */
+        const val PAGE_DOWNLOADS = "downloads"
     }
 }

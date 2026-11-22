@@ -107,6 +107,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
             view.closeClipboard()
             view.closeEdit()
             view.closeResize()
+            view.closeTranslate()
         }
         refreshAutoShift()
         applyNavigationBar()
@@ -400,6 +401,32 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
         ClipboardStore.capture(text, fromListener)
     }
 
+    /** Teks yang diterjemahkan: yang diblok, atau seluruh isi kolom bila tidak ada blok. */
+    override fun onReadFieldText(): String {
+        val ic = currentInputConnection ?: return ""
+        val selected = ic.getSelectedText(0)?.toString()
+        if (!selected.isNullOrEmpty()) return selected
+        val before = ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(MAX_FIELD_CHARS, 0)?.toString() ?: ""
+        return before + after
+    }
+
+    /** Sisipkan hasil terjemahan di kursor (menggantikan blok teks bila ada). */
+    override fun onInsertText(text: String) {
+        currentInputConnection?.commitText(text, 1)
+        refreshAutoShift()
+        refreshSuggestions()
+    }
+
+    /** Ganti teks yang diterjemahkan: blok teks bila ada, selain itu seluruh isi kolom. */
+    override fun onReplaceFieldText(text: String) {
+        val ic = currentInputConnection ?: return
+        if (ic.getSelectedText(0).isNullOrEmpty()) selectAllText(ic)
+        ic.commitText(text, 1)
+        refreshAutoShift()
+        refreshSuggestions()
+    }
+
     /** Aksi dari panel kontrol kursor: gerak kursor, pilih, salin, tempel, potong. */
     override fun onEditAction(action: EditAction, extend: Boolean) {
         val ic = currentInputConnection ?: return
@@ -556,6 +583,9 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
 
         /** Panjang teks sebelum kursor yang dibaca untuk mencari kata yang sedang diketik. */
         const val MAX_WORD_CHARS = 32
+
+        /** Batas panjang teks kolom yang dibaca untuk diterjemahkan. */
+        const val MAX_FIELD_CHARS = 2000
 
         /** Penanda sensitif pada klip (ClipDescription.EXTRA_IS_SENSITIVE, ada sejak Android 13). */
         const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"

@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStep2: TextView
     private lateinit var cardPrefs: View
     private lateinit var cardTools: View
+    private lateinit var cardDownloads: View
 
     private lateinit var optDark: View
     private lateinit var optLight: View
@@ -94,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         btnStep2 = findViewById(R.id.btnStep2)
         cardPrefs = findViewById(R.id.cardPrefs)
         cardTools = findViewById(R.id.cardTools)
+        cardDownloads = findViewById(R.id.cardDownloads)
 
         optDark = findViewById(R.id.optDark)
         optLight = findViewById(R.id.optLight)
@@ -119,6 +121,12 @@ class MainActivity : AppCompatActivity() {
         }
         cardPrefs.setOnClickListener {
             startActivity(Intent(this, PreferencesActivity::class.java))
+        }
+        cardDownloads.setOnClickListener {
+            startActivity(
+                Intent(this, PreferencesActivity::class.java)
+                    .putExtra(PreferencesActivity.EXTRA_PAGE, PreferencesActivity.PAGE_DOWNLOADS)
+            )
         }
         cardTools.setOnClickListener {
             startActivity(

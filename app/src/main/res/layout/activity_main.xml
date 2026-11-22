@@ -266,7 +266,48 @@
                         android:tint="@color/muted" />
                 </LinearLayout>
 
-                <!-- Garis pembatas B2 | C -->
+                <!-- B3. Paket Unduhan (data bahasa terjemahan dan paket lain ke depannya) -->
+                <LinearLayout
+                    android:id="@+id/cardDownloads"
+                    style="@style/ZekuCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/ZekuTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/downloads_card_title" />
+
+                        <TextView
+                            style="@style/ZekuDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/downloads_card_desc" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="12dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_chevron_right"
+                        android:tint="@color/muted" />
+                </LinearLayout>
+
+                <!-- Garis pembatas B3 | C -->
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"

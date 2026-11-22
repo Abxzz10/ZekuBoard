@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Terjemahan: huruf aksara dan huruf A. Warna diatur dari kode. -->
+    <path
+        android:pathData="M4,5H13M8.5,3V5M6,5C6.5,8.5 9,11 12,12.5M11,5C10.5,8.5 8,11.5 4,13M12.5,21L16.5,11L20.5,21M14,17.5H19"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
