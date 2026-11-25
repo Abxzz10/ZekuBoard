@@ -2739,7 +2739,22 @@ class ZekuKeyboardView(context: Context) : View(context) {
     val translateActive: Boolean
         get() = trOpen
 
-    private fun trAreaHeight(): Float = 2 * trCardH + dp(12f)
+    /**
+     * Kartu pesan hanya tampil bila ada yang perlu disampaikan (kolom ketik kosong, data bahasa belum
+     * diunduh, atau gagal). Hasil terjemahan tidak punya kartu: langsung ditempel ke kolom aplikasi.
+     */
+    private fun trResultVisible(): Boolean =
+        trState == TR_EMPTY || trState == TR_MISSING || trState == TR_ERROR
+
+    private fun trAreaHeight(): Float =
+        if (trResultVisible()) 2 * trCardH + dp(12f) else trCardH + dp(8f)
+
+    /** Ganti keadaan terjemahan; tinggi keyboard disesuaikan bila kartu hasil muncul atau hilang. */
+    private fun setTrState(next: Int) {
+        val before = trResultVisible()
+        trState = next
+        if (before != trResultVisible()) requestLayout()
+    }
 
     private fun openTranslate() {
         if (trOpen) return
@@ -2755,7 +2770,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (hasSelection) {
             trInput.append((listener?.onReadFieldText() ?: "").take(MAX_TRANSLATE_CHARS))
         }
-        trState = TR_IDLE
+        setTrState(TR_IDLE)
         trResult = ""
         trMissingNames = ""
         trRequestId++
@@ -2807,7 +2822,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         // Teks berubah: hasil lama tidak berlaku lagi.
         if (trState != TR_IDLE) {
             trRequestId++
-            trState = TR_IDLE
+            setTrState(TR_IDLE)
             trResult = ""
         }
         invalidate()
@@ -2825,8 +2840,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun trGeo(): TrGeo {
         val margin = dp(8f)
         val gap = dp(4f)
-        val result = RectF(margin, gap, width - margin, gap + trCardH)
-        val input = RectF(margin, result.bottom + gap, width - margin, result.bottom + gap + trCardH)
+        val showResult = trResultVisible()
+        val result = if (showResult) RectF(margin, gap, width - margin, gap + trCardH) else RectF(margin, gap, width - margin, gap)
+        val inputTop = if (showResult) result.bottom + gap else gap
+        val input = RectF(margin, inputTop, width - margin, inputTop + trCardH)
         val button = trCardH - dp(8f)
         val translate = RectF(
             input.right - dp(4f) - button, input.centerY() - button / 2f,
@@ -2857,33 +2874,35 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val t = trGeo()
         val pressedTarget = if (trPointer >= 0) trTarget else -1
 
-        // Kartu hasil: terjemahan, atau petunjuk dan pesan sesuai keadaan.
-        fillPaint.color = palette.key
-        canvas.drawRoundRect(t.result, radius, radius, fillPaint)
-        val resultRight = when (trState) {
-            TR_DONE -> t.insert.left
-            TR_MISSING -> t.downloads.left
-            else -> t.result.right
-        } - dp(8f)
-        val box = RectF(t.result.left + dp(12f), t.result.top + dp(4f), resultRight, t.result.bottom - dp(4f))
-        when (trState) {
-            TR_DONE -> drawTextBlock(canvas, trResult, box, 15f, 255, false)
-            TR_BUSY -> drawTextBlock(canvas, context.getString(R.string.tr_busy), box, 14f, 160, false)
-            TR_EMPTY -> drawTextBlock(canvas, context.getString(R.string.tr_empty), box, 14f, 160, false)
-            TR_ERROR -> drawTextBlock(canvas, context.getString(R.string.tr_error), box, 14f, 200, false)
-            TR_MISSING -> drawTextBlock(
-                canvas, context.getString(R.string.tr_missing_fmt, trMissingNames), box, 13f, 220, false
-            )
-            else -> drawTextBlock(canvas, context.getString(R.string.tr_hint_idle), box, 14f, 160, false)
-        }
-        if (trState == TR_DONE) {
-            drawTranslateButton(canvas, t.insert, context.getString(R.string.tr_insert), true, pressedTarget == TR_T_INSERT)
-        }
-        if (trState == TR_MISSING) {
-            drawTranslateButton(
-                canvas, t.downloads, context.getString(R.string.tr_open_downloads), true,
-                pressedTarget == TR_T_DOWNLOADS
-            )
+        // Kartu hasil: hanya muncul bila ada hasil, proses, atau pesan. Saat siap diketik tidak tampil.
+        if (trResultVisible()) {
+            fillPaint.color = palette.key
+            canvas.drawRoundRect(t.result, radius, radius, fillPaint)
+            val resultRight = when (trState) {
+                TR_DONE -> t.insert.left
+                TR_MISSING -> t.downloads.left
+                else -> t.result.right
+            } - dp(8f)
+            val box = RectF(t.result.left + dp(12f), t.result.top + dp(4f), resultRight, t.result.bottom - dp(4f))
+            when (trState) {
+                TR_DONE -> drawTextBlock(canvas, trResult, box, 15f, 255, false)
+                TR_BUSY -> drawTextBlock(canvas, context.getString(R.string.tr_busy), box, 14f, 160, false)
+                TR_EMPTY -> drawTextBlock(canvas, context.getString(R.string.tr_empty), box, 14f, 160, false)
+                TR_ERROR -> drawTextBlock(canvas, context.getString(R.string.tr_error), box, 14f, 200, false)
+                TR_MISSING -> drawTextBlock(
+                    canvas, context.getString(R.string.tr_missing_fmt, trMissingNames), box, 13f, 220, false
+                )
+                else -> Unit
+            }
+            if (trState == TR_DONE) {
+                drawTranslateButton(canvas, t.insert, context.getString(R.string.tr_insert), true, pressedTarget == TR_T_INSERT)
+            }
+            if (trState == TR_MISSING) {
+                drawTranslateButton(
+                    canvas, t.downloads, context.getString(R.string.tr_open_downloads), true,
+                    pressedTarget == TR_T_DOWNLOADS
+                )
+            }
         }
 
         // Kartu ketik: kalimat yang diketik di keyboard, tombol terjemah (mirip enter) di paling kanan.
@@ -3164,7 +3183,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         trPicking = 0
         trRequestId++
         trResult = ""
-        trState = TR_IDLE
+        setTrState(TR_IDLE)
         invalidate()
     }
 
@@ -3177,40 +3196,47 @@ class ZekuKeyboardView(context: Context) : View(context) {
         prefs.translateTo = trTo
         trRequestId++
         trResult = ""
-        trState = TR_IDLE
+        setTrState(TR_IDLE)
+        invalidate()
+    }
+
+    /**
+     * Hasil terjemahan langsung ditempel ke kolom aplikasi (misalnya kolom chat WhatsApp). Kolom ketik
+     * dikosongkan supaya bisa langsung mengetik kalimat berikutnya; mode terjemahan tetap terbuka.
+     */
+    private fun trDeliver(text: String) {
+        listener?.onInsertText(text)
+        trInput.setLength(0)
+        trResult = ""
+        setTrState(TR_IDLE)
         invalidate()
     }
 
     private fun trRun() {
         val text = trInput.toString().trim()
         if (text.isEmpty()) {
-            trState = TR_EMPTY
+            setTrState(TR_EMPTY)
             invalidate()
             return
         }
         if (trFrom == trTo) {
-            // Bahasa asal dan tujuan sama: tidak ada yang perlu diterjemahkan.
-            trResult = text
-            trState = TR_DONE
-            invalidate()
+            // Bahasa asal dan tujuan sama: tidak ada yang perlu diterjemahkan, tempel apa adanya.
+            trDeliver(text)
             return
         }
-        trState = TR_BUSY
+        setTrState(TR_BUSY)
         trResult = ""
         val id = ++trRequestId
         invalidate()
         TranslationHelper.translate(text, trFrom, trTo) { res ->
             if (!trOpen || id != trRequestId) return@translate
             when (res.status) {
-                TranslationHelper.STATUS_OK -> {
-                    trResult = res.text
-                    trState = TR_DONE
-                }
+                TranslationHelper.STATUS_OK -> trDeliver(res.text)
                 TranslationHelper.STATUS_MISSING -> {
                     trMissingNames = res.missing.joinToString(", ") { TranslationHelper.languageName(it) }
-                    trState = TR_MISSING
+                    setTrState(TR_MISSING)
                 }
-                else -> trState = TR_ERROR
+                else -> setTrState(TR_ERROR)
             }
             invalidate()
         }
