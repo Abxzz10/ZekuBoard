@@ -153,6 +153,11 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     // ------------------------------------------------ Aksi dari tampilan keyboard
 
     override fun onKeyText(text: String) {
+        // Mode Terjemahan: ketikan masuk ke kolom ketik di keyboard, bukan ke aplikasi.
+        if (keyboardView?.translateActive == true) {
+            keyboardView?.translateType(text)
+            return
+        }
         // Spasi atau tanda baca menutup sebuah kata: catat kata itu sebelum teks baru masuk.
         if (isWordBoundary(text)) learnWordBeforeCursor()
         currentInputConnection?.commitText(text, 1)
@@ -179,6 +184,10 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     override fun onKeyDelete() {
+        if (keyboardView?.translateActive == true) {
+            keyboardView?.translateBackspace()
+            return
+        }
         // Event tombol DEL paling kompatibel: menghapus pilihan teks atau satu karakter.
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         refreshAutoShift()
@@ -186,6 +195,10 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     override fun onKeyEnter() {
+        if (keyboardView?.translateActive == true) {
+            keyboardView?.translateRun()
+            return
+        }
         val ic = currentInputConnection ?: return
         learnWordBeforeCursor()
         val options = currentInputEditorInfo?.imeOptions ?: 0
@@ -210,6 +223,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
      * batas awal dan akhir teks, jadi kursor tidak bisa keluar dari teks.
      */
     override fun onCursorMove(steps: Int) {
+        if (keyboardView?.translateActive == true) return
         if (steps == 0 || currentInputConnection == null) return
         val key = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         repeat(abs(steps).coerceAtMost(MAX_STEPS_PER_MOVE)) {
@@ -222,6 +236,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     // ------------------------------------------------------ Gestur Shift + hapus
 
     override fun onSelectBegin(): Boolean {
+        if (keyboardView?.translateActive == true) return false
         session = null
         val ic = currentInputConnection ?: return false
         val pos = cursorPosition(ic)
@@ -241,6 +256,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     override fun onSelectChange(chars: Int) {
+        if (keyboardView?.translateActive == true) return
         val s = session ?: return
         val ic = currentInputConnection ?: return
 
@@ -280,6 +296,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     override fun onSelectCommit() {
+        if (keyboardView?.translateActive == true) return
         val s = session ?: return
         session = null
         val ic = currentInputConnection ?: return
@@ -297,6 +314,7 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
     }
 
     override fun onSelectCancel() {
+        if (keyboardView?.translateActive == true) return
         val s = session ?: return
         session = null
         currentInputConnection?.setSelection(s.anchor, s.anchor)

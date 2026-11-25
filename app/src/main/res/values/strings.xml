@@ -45,9 +45,10 @@
     <string name="dl_button_wait">Mengunduh</string>
     <string name="dl_button_retry">Coba lagi</string>
     <string name="dl_attribution">Terjemahan memakai Google ML Kit, berjalan di perangkat ini. Hasilnya cocok untuk terjemahan sederhana dan bisa mengandung kesalahan.</string>
-    <string name="tr_hint_idle">Tekan tombol di kiri untuk menerjemahkan teks di kolom</string>
+    <string name="tr_hint_idle">Tekan tombol terjemah di kanan kolom ketik</string>
     <string name="tr_source_hint">Teks di kolom akan tampil di sini</string>
-    <string name="tr_empty">Belum ada teks di kolom. Ketik atau blok teks dulu, lalu buka terjemahan lagi.</string>
+    <string name="tr_empty">Ketik kalimat dulu, lalu tekan tombol terjemah</string>
+    <string name="tr_input_hint">Ketik kalimat yang akan diterjemahkan</string>
     <string name="tr_busy">Menerjemahkan…</string>
     <string name="tr_missing_fmt">Data bahasa belum diunduh: %1$s</string>
     <string name="tr_open_downloads">Buka Paket Unduhan</string>

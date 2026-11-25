@@ -248,7 +248,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var trOpen = false
     private var trFrom = "id"
     private var trTo = "en"
-    private var trSourceText = ""
+    private val trInput = StringBuilder()
+    private var trCardH = 0f
+    private var trPointer = -1
+    private var trTarget = -1
+    private var trDownY = 0f
+    private var trLastX = 0f
+    private var trLastY = 0f
+    private var trScrolling = false
     private var trState = TR_IDLE
     private var trResult = ""
     private var trMissingNames = ""
@@ -484,14 +491,22 @@ class ZekuKeyboardView(context: Context) : View(context) {
         // Tinggi bilah atas: satu bilah saja, berapa pun yang menyala (Tools, saran, atau keduanya
         // bergantian). Keduanya mati: tidak ada ruang. Area ini bukan area tombol: sentuhan di sini
         // diabaikan (lihat findBox dan buildBoxes), jadi tidak ada tombol yang ikut terketik.
-        barH = if (toolsOn || suggestOn) dp(if (landscape) 32f else 40f) else 0f
-        topExtra = barH
+        if (trOpen) {
+            // Terjemahan: kartu hasil dan kartu ketik di atas bilah bahasa; tombol tetap qwerty di bawahnya.
+            trCardH = dp(if (landscape) 36f else 46f)
+            barH = dp(44f)
+            topExtra = trAreaHeight() + barH
+        } else {
+            trCardH = 0f
+            barH = if (toolsOn || suggestOn) dp(if (landscape) 32f else 40f) else 0f
+            topExtra = barH
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         updateMetrics()
         // Panel emoji butuh paling sedikit 5 baris tinggi supaya kisinya cukup lega.
-        val rowCount = if (emojiOpen || clipOpen || editOpen || trOpen) max(rows.size, PANEL_MIN_ROWS) else rows.size
+        val rowCount = if (emojiOpen || clipOpen || editOpen) max(rows.size, PANEL_MIN_ROWS) else rows.size
         val h = (rowHeight * rowCount + topTotal + bottomPad).toInt()
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), h)
     }
@@ -554,13 +569,14 @@ class ZekuKeyboardView(context: Context) : View(context) {
             drawEditPanel(canvas)
             return
         }
-        if (trOpen) {
-            drawTranslatePanel(canvas)
-            return
+        if (trOpen) drawTranslateArea(canvas) else drawTopBars(canvas)
+        if (trOpen && trPicking != 0) {
+            // Memilih bahasa: daftar bahasa menggantikan tombol sementara.
+            drawLanguagePicker(canvas)
+        } else {
+            for (box in boxes) drawKey(canvas, box)
+            previewBox?.let { drawPreview(canvas, it) }
         }
-        drawTopBars(canvas)
-        for (box in boxes) drawKey(canvas, box)
-        previewBox?.let { drawPreview(canvas, it) }
         if (resizeOpen) drawResizeOverlay(canvas)
     }
 
@@ -576,6 +592,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     /** Isi bilah atas yang sedang tampil, atau null bila Tools dan kolom saran sama-sama mati. */
     private fun activeTopBar(): TopBarMode? = when {
+        trOpen -> null
         toolsOn && suggestOn -> topMode
         toolsOn -> TopBarMode.TOOLS
         suggestOn -> TopBarMode.SUGGEST
@@ -807,7 +824,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (emojiOpen) return handleEmojiTouch(event)
         if (clipOpen) return handleClipboardTouch(event)
         if (editOpen) return handleEditTouch(event)
-        if (trOpen) return handleTranslateTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelTouches()
@@ -850,6 +866,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
         box.key.type == KeyType.CHARACTER && (box.face.top - dp(2f) - rowHeight) >= 0f
 
     private fun handleDown(id: Int, x: Float, y: Float) {
+        // Terjemahan: kartu, bilah bahasa, dan daftar bahasa menangkap sentuhan; tombol qwerty tetap biasa.
+        if (trOpen && (y < topExtra || trPicking != 0)) {
+            trDown(id, x, y)
+            return
+        }
         // Sentuhan di bilah atas: hanya kotak saran yang bereaksi, tidak pernah tombol huruf.
         if (y < topExtra) {
             if (barPointer < 0 && toolPointer < 0) {
@@ -898,6 +919,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleMove(id: Int, x: Float, y: Float) {
+        if (id == trPointer) {
+            trMove(x, y)
+            return
+        }
         if (id == toolPointer) {
             val inside = toolSlotAt(x, y) == toolDownSlot
             if (inside != toolPressed) {
@@ -938,6 +963,10 @@ class ZekuKeyboardView(context: Context) : View(context) {
     }
 
     private fun handleUp(id: Int) {
+        if (id == trPointer) {
+            trUp()
+            return
+        }
         if (id == toolPointer) {
             val fire = toolPressed
             val slot = toolDownSlot
@@ -1017,6 +1046,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
         toolPointer = -1
         toolDownSlot = -1
         toolPressed = false
+        trPointer = -1
+        trTarget = -1
+        trScrolling = false
         previewBox = null
         previewPointer = -1
     }
@@ -1139,7 +1171,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private fun emojiTabCount(): Int = EmojiData.categories.size + 1
 
     private fun panelGeo(): PanelGeo {
-        if (clipOpen || editOpen || trOpen) {
+        if (clipOpen || editOpen) {
             // Panel Tools: bilah atas (kembali, nama, aksi), tanpa baris ABC, spasi, dan hapus di bawah.
             val tabsTop = dp(4f)
             val tabsBottom = tabsTop + rowHeight * 0.8f
@@ -2703,6 +2735,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
 
     // ----------------------------------------------------------------- Terjemahan
 
+    /** Mode Terjemahan menyala: ketikan masuk ke kolom ketik di keyboard, bukan ke aplikasi. */
+    val translateActive: Boolean
+        get() = trOpen
+
+    private fun trAreaHeight(): Float = 2 * trCardH + dp(12f)
+
     private fun openTranslate() {
         if (trOpen) return
         closeResize()
@@ -2712,8 +2750,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
         cancelTouches()
         trFrom = prefs.translateFrom
         trTo = prefs.translateTo
-        trSourceText = (listener?.onReadFieldText() ?: "").take(MAX_TRANSLATE_CHARS)
-        trState = if (trSourceText.isBlank()) TR_EMPTY else TR_IDLE
+        trInput.setLength(0)
+        // Ada teks yang diblok di aplikasi: dijadikan bahan awal terjemahan.
+        if (hasSelection) {
+            trInput.append((listener?.onReadFieldText() ?: "").take(MAX_TRANSLATE_CHARS))
+        }
+        trState = TR_IDLE
         trResult = ""
         trMissingNames = ""
         trRequestId++
@@ -2723,131 +2765,173 @@ class ZekuKeyboardView(context: Context) : View(context) {
             trDownloaded = set
             if (trOpen) invalidate()
         }
-        panelTouchActive = false
-        panelTarget = -1
         trOpen = true
         requestLayout()
         invalidate()
     }
 
-    /** Tutup panel Terjemahan dan kembali ke tombol. */
+    /** Tutup mode Terjemahan: kolom ketik dikosongkan dan keyboard kembali seperti biasa. */
     fun closeTranslate() {
         if (!trOpen) return
         trOpen = false
         trPicking = 0
         trRequestId++
-        panelCancel()
+        trInput.setLength(0)
+        trPointer = -1
+        trTarget = -1
+        trScrolling = false
         requestLayout()
         invalidate()
     }
 
-    private class TrGeo(
-        val back: RectF, val from: RectF, val swap: RectF, val to: RectF,
-        val source: RectF, val enter: RectF, val result: RectF,
-        val replace: RectF, val insert: RectF, val downloads: RectF
-    )
-
-    /** Letak semua bagian panel: bilah atas, kolom teks sumber, hasil, dan tombol Ganti teks dan Sisipkan. */
-    private fun trGeo(g: PanelGeo): TrGeo {
-        val margin = clipMargin()
-        val gap = dp(6f)
-
-        // Bilah atas: kembali di kiri; di tengah bahasa asal, tombol tukar, bahasa tujuan.
-        val back = toolBarBackRect(g)
-        val swapSize = toolBarSize(g)
-        val chipW = ((width - 2 * (back.right + dp(8f)) - swapSize - 2 * gap) / 2f).coerceIn(dp(60f), dp(110f))
-        val cx = width / 2f
-        val swap = RectF(cx - swapSize / 2f, g.tabsTop, cx + swapSize / 2f, g.tabsBottom)
-        val from = RectF(swap.left - gap - chipW, g.tabsTop, swap.left - gap, g.tabsBottom)
-        val to = RectF(swap.right + gap, g.tabsTop, swap.right + gap + chipW, g.tabsBottom)
-
-        // Isi: kolom teks sumber (tombol terjemah di paling kiri), hasil, lalu dua tombol di bawah.
-        val buttonH = dp(44f)
-        val contentH = g.gridBottom - g.gridTop
-        val sourceH = (contentH * 0.36f).coerceAtLeast(dp(72f))
-        val source = RectF(margin, g.gridTop, width - margin, g.gridTop + sourceH)
-        val enterSize = minOf(dp(44f), sourceH - dp(16f))
-        val enter = RectF(
-            source.left + dp(8f), source.centerY() - enterSize / 2f,
-            source.left + dp(8f) + enterSize, source.centerY() + enterSize / 2f
-        )
-        val buttonsTop = g.gridBottom - buttonH
-        val result = RectF(margin, source.bottom + gap, width - margin, buttonsTop - gap)
-        val half = (width - 2 * margin - gap) / 2f
-        val replace = RectF(margin, buttonsTop, margin + half, g.gridBottom)
-        val insert = RectF(margin + half + gap, buttonsTop, width - margin, g.gridBottom)
-        val dlW = dp(200f)
-        val dlH = dp(40f)
-        val downloads = RectF(
-            result.centerX() - dlW / 2f, result.bottom - dlH - dp(10f),
-            result.centerX() + dlW / 2f, result.bottom - dp(10f)
-        )
-        return TrGeo(back, from, swap, to, source, enter, result, replace, insert, downloads)
+    /** Huruf yang diketik di keyboard saat mode Terjemahan. */
+    fun translateType(text: String) {
+        if (!trOpen || trInput.length + text.length > MAX_TRANSLATE_CHARS) return
+        trInput.append(text)
+        trInputChanged()
     }
 
-    private fun drawTranslatePanel(canvas: Canvas) {
-        val g = panelGeo()
-        val t = trGeo(g)
+    /** Hapus satu karakter terakhir di kolom ketik. */
+    fun translateBackspace() {
+        if (!trOpen || trInput.isEmpty()) return
+        trInput.setLength(trInput.length - Character.charCount(Character.codePointBefore(trInput, trInput.length)))
+        trInputChanged()
+    }
 
-        // Bilah atas.
-        drawToolBarButton(canvas, t.back, R.drawable.ic_kb_back, true, panelTouchActive && panelTarget == TR_T_BACK)
-        drawLanguageChip(
-            canvas, t.from, TranslationHelper.languageName(trFrom),
-            trPicking == 1, panelTouchActive && panelTarget == TR_T_FROM
-        )
-        drawToolBarButton(canvas, t.swap, R.drawable.ic_kb_swap, true, panelTouchActive && panelTarget == TR_T_SWAP)
-        drawLanguageChip(
-            canvas, t.to, TranslationHelper.languageName(trTo),
-            trPicking == 2, panelTouchActive && panelTarget == TR_T_TO
-        )
+    /** Terjemahkan kalimat di kolom ketik (juga dipakai tombol Enter keyboard). */
+    fun translateRun() {
+        if (trOpen) trRun()
+    }
 
-        // Memilih bahasa: daftar semua bahasa menggantikan isi panel.
-        if (trPicking != 0) {
-            drawLanguagePicker(canvas, g)
-            return
+    private fun trInputChanged() {
+        // Teks berubah: hasil lama tidak berlaku lagi.
+        if (trState != TR_IDLE) {
+            trRequestId++
+            trState = TR_IDLE
+            trResult = ""
         }
+        invalidate()
+    }
 
-        // Kolom teks sumber: tombol terjemah (mirip enter) di paling kiri, lalu teks di kolom.
-        fillPaint.color = palette.key
-        canvas.drawRoundRect(t.source, radius, radius, fillPaint)
-        val canRun = trSourceText.isNotBlank() && trState != TR_BUSY
-        fillPaint.color = if (panelTouchActive && panelTarget == TR_T_ENTER) palette.keyPressed else palette.text
-        fillPaint.alpha = if (canRun) 255 else 80
-        canvas.drawRoundRect(t.enter, radius, radius, fillPaint)
-        fillPaint.alpha = 255
-        drawIconAt(
-            canvas, t.enter.centerX(), t.enter.centerY(), R.drawable.ic_kb_enter,
-            t.enter.width() * 0.5f, if (canRun) 255 else 120, palette.key
+    private class TrGeo(
+        val result: RectF, val input: RectF, val translate: RectF, val insert: RectF, val downloads: RectF,
+        val back: RectF, val from: RectF, val swap: RectF, val to: RectF
+    )
+
+    /**
+     * Susunan dari atas: kartu hasil, kartu ketik (tombol terjemah di paling kanan), bilah bahasa
+     * (kembali, bahasa asal, tukar, bahasa tujuan), lalu tombol qwerty.
+     */
+    private fun trGeo(): TrGeo {
+        val margin = dp(8f)
+        val gap = dp(4f)
+        val result = RectF(margin, gap, width - margin, gap + trCardH)
+        val input = RectF(margin, result.bottom + gap, width - margin, result.bottom + gap + trCardH)
+        val button = trCardH - dp(8f)
+        val translate = RectF(
+            input.right - dp(4f) - button, input.centerY() - button / 2f,
+            input.right - dp(4f), input.centerY() + button / 2f
         )
-        val sourceBox = RectF(t.enter.right + dp(10f), t.source.top + dp(8f), t.source.right - dp(12f), t.source.bottom - dp(8f))
-        if (trSourceText.isBlank()) {
-            drawTextBlock(canvas, context.getString(R.string.tr_source_hint), sourceBox, 14f, 140, false)
-        } else {
-            drawTextBlock(canvas, trSourceText, sourceBox, 14f, 255, false)
-        }
+        val insert = RectF(
+            result.right - dp(4f) - dp(92f), result.centerY() - button / 2f,
+            result.right - dp(4f), result.centerY() + button / 2f
+        )
+        val downloads = RectF(
+            result.right - dp(4f) - dp(132f), result.centerY() - button / 2f,
+            result.right - dp(4f), result.centerY() + button / 2f
+        )
 
-        // Hasil, atau pesan sesuai keadaan.
+        val barTop = trAreaHeight() + dp(2f)
+        val barBottom = trAreaHeight() + barH - dp(2f)
+        val size = barBottom - barTop
+        val back = RectF(margin, barTop, margin + size, barBottom)
+        val chipW = ((width - 2 * (back.right + dp(8f)) - size - 2 * gap) / 2f).coerceIn(dp(60f), dp(110f))
+        val cx = width / 2f
+        val swap = RectF(cx - size / 2f, barTop, cx + size / 2f, barBottom)
+        val from = RectF(swap.left - gap - chipW, barTop, swap.left - gap, barBottom)
+        val to = RectF(swap.right + gap, barTop, swap.right + gap + chipW, barBottom)
+        return TrGeo(result, input, translate, insert, downloads, back, from, swap, to)
+    }
+
+    private fun drawTranslateArea(canvas: Canvas) {
+        val t = trGeo()
+        val pressedTarget = if (trPointer >= 0) trTarget else -1
+
+        // Kartu hasil: terjemahan, atau petunjuk dan pesan sesuai keadaan.
         fillPaint.color = palette.key
         canvas.drawRoundRect(t.result, radius, radius, fillPaint)
-        val box = RectF(t.result.left + dp(12f), t.result.top + dp(10f), t.result.right - dp(12f), t.result.bottom - dp(10f))
+        val resultRight = when (trState) {
+            TR_DONE -> t.insert.left
+            TR_MISSING -> t.downloads.left
+            else -> t.result.right
+        } - dp(8f)
+        val box = RectF(t.result.left + dp(12f), t.result.top + dp(4f), resultRight, t.result.bottom - dp(4f))
         when (trState) {
             TR_DONE -> drawTextBlock(canvas, trResult, box, 15f, 255, false)
             TR_BUSY -> drawTextBlock(canvas, context.getString(R.string.tr_busy), box, 14f, 160, false)
             TR_EMPTY -> drawTextBlock(canvas, context.getString(R.string.tr_empty), box, 14f, 160, false)
             TR_ERROR -> drawTextBlock(canvas, context.getString(R.string.tr_error), box, 14f, 200, false)
-            TR_MISSING -> {
-                val textBox = RectF(box.left, box.top, box.right, t.downloads.top - dp(6f))
-                drawTextBlock(canvas, context.getString(R.string.tr_missing_fmt, trMissingNames), textBox, 14f, 220, false)
-                drawPanelFace(canvas, t.downloads, panelTouchActive && panelTarget == TR_T_DOWNLOADS)
-                drawFittedLabel(canvas, t.downloads, context.getString(R.string.tr_open_downloads), palette.text)
-            }
+            TR_MISSING -> drawTextBlock(
+                canvas, context.getString(R.string.tr_missing_fmt, trMissingNames), box, 13f, 220, false
+            )
             else -> drawTextBlock(canvas, context.getString(R.string.tr_hint_idle), box, 14f, 160, false)
         }
+        if (trState == TR_DONE) {
+            drawTranslateButton(canvas, t.insert, context.getString(R.string.tr_insert), true, pressedTarget == TR_T_INSERT)
+        }
+        if (trState == TR_MISSING) {
+            drawTranslateButton(
+                canvas, t.downloads, context.getString(R.string.tr_open_downloads), true,
+                pressedTarget == TR_T_DOWNLOADS
+            )
+        }
 
-        // Ganti teks dan Sisipkan: aktif setelah ada hasil.
-        val done = trState == TR_DONE
-        drawTranslateButton(canvas, t.replace, context.getString(R.string.tr_replace), done, panelTouchActive && panelTarget == TR_T_REPLACE)
-        drawTranslateButton(canvas, t.insert, context.getString(R.string.tr_insert), done, panelTouchActive && panelTarget == TR_T_INSERT)
+        // Kartu ketik: kalimat yang diketik di keyboard, tombol terjemah (mirip enter) di paling kanan.
+        fillPaint.color = palette.key
+        canvas.drawRoundRect(t.input, radius, radius, fillPaint)
+        val canRun = trInput.isNotBlank() && trState != TR_BUSY
+        fillPaint.color = if (pressedTarget == TR_T_ENTER) palette.keyPressed else palette.text
+        fillPaint.alpha = if (canRun) 255 else 80
+        canvas.drawRoundRect(t.translate, radius, radius, fillPaint)
+        fillPaint.alpha = 255
+        drawIconAt(
+            canvas, t.translate.centerX(), t.translate.centerY(), R.drawable.ic_kb_enter,
+            t.translate.width() * 0.5f, if (canRun) 255 else 120, palette.key
+        )
+        drawInputText(canvas, RectF(t.input.left + dp(12f), t.input.top + dp(4f), t.translate.left - dp(8f), t.input.bottom - dp(4f)))
+
+        // Bilah atas: kembali, bahasa asal, tukar, bahasa tujuan.
+        drawToolBarButton(canvas, t.back, R.drawable.ic_kb_back, true, pressedTarget == TR_T_BACK)
+        drawLanguageChip(canvas, t.from, TranslationHelper.languageName(trFrom), trPicking == 1, pressedTarget == TR_T_FROM)
+        drawToolBarButton(canvas, t.swap, R.drawable.ic_kb_swap, true, pressedTarget == TR_T_SWAP)
+        drawLanguageChip(canvas, t.to, TranslationHelper.languageName(trTo), trPicking == 2, pressedTarget == TR_T_TO)
+    }
+
+    /** Kalimat yang diketik: bagian paling akhir selalu terlihat, dengan garis kursor di ujungnya. */
+    private fun drawInputText(canvas: Canvas, box: RectF) {
+        if (box.width() < 4f || box.height() < 1f) return
+        if (trInput.isEmpty()) {
+            drawTextBlock(canvas, context.getString(R.string.tr_input_hint), box, 14f, 140, false)
+            fillPaint.color = palette.text
+            canvas.drawRect(box.left, box.centerY() - dp(9f), box.left + dp(1.5f), box.centerY() + dp(9f), fillPaint)
+            return
+        }
+        clipTextPaint.textSize = dp(15f)
+        clipTextPaint.color = palette.text
+        clipTextPaint.alpha = 255
+        val text = trInput.toString()
+        val width = (box.width() - dp(4f)).toInt().coerceAtLeast(1)
+        val layout = StaticLayout.Builder.obtain(text, 0, text.length, clipTextPaint, width).build()
+        canvas.save()
+        canvas.clipRect(box)
+        val dy = if (layout.height > box.height()) box.height() - layout.height else (box.height() - layout.height) / 2f
+        canvas.translate(box.left, box.top + dy)
+        layout.draw(canvas)
+        val last = layout.lineCount - 1
+        val caretX = layout.getLineRight(last) + dp(1f)
+        fillPaint.color = palette.text
+        canvas.drawRect(caretX, layout.getLineTop(last).toFloat(), caretX + dp(1.5f), layout.getLineBottom(last).toFloat(), fillPaint)
+        canvas.restore()
     }
 
     /** Tombol bahasa di bilah atas. [active] = daftar bahasanya sedang terbuka (warna dibalik). */
@@ -2862,15 +2946,22 @@ class ZekuKeyboardView(context: Context) : View(context) {
         }
     }
 
+    private fun drawTranslateButton(canvas: Canvas, rect: RectF, label: String, enabled: Boolean, pressed: Boolean) {
+        drawPanelFace(canvas, rect, enabled && pressed)
+        val color = if (enabled) palette.text else (palette.text and 0x00FFFFFF) or (0x5A shl 24)
+        drawFittedLabel(canvas, rect, label, color)
+    }
+
     private fun trRowHeight(): Float = dp(48f)
 
-    private fun trPickScrollMax(g: PanelGeo): Float =
-        max(0f, TranslationHelper.languages().size * trRowHeight() - (g.gridBottom - g.gridTop))
+    private fun trPickScrollMax(): Float =
+        max(0f, TranslationHelper.languages().size * trRowHeight() - (height - bottomPad - topExtra))
 
     /** Daftar semua bahasa ML Kit: nama, status unduhan, dan tanda centang pada bahasa yang sedang dipilih. */
-    private fun drawLanguagePicker(canvas: Canvas, g: PanelGeo) {
-        val margin = clipMargin()
-        val area = RectF(margin, g.gridTop, width - margin, g.gridBottom)
+    private fun drawLanguagePicker(canvas: Canvas) {
+        val margin = dp(8f)
+        val top = topExtra
+        val area = RectF(margin, top, width - margin, height - bottomPad)
         fillPaint.color = palette.key
         canvas.drawRoundRect(area, radius, radius, fillPaint)
 
@@ -2879,15 +2970,16 @@ class ZekuKeyboardView(context: Context) : View(context) {
         val current = if (trPicking == 1) trFrom else trTo
         val first = (trPickScroll / rowH).toInt().coerceAtLeast(0)
         val last = minOf(langs.size - 1, ((trPickScroll + area.height()) / rowH).toInt())
+        val pressedTarget = if (trPointer >= 0) trTarget else -1
 
         canvas.save()
         canvas.clipRect(area)
         for (i in first..last) {
             val code = langs[i]
-            val top = g.gridTop + i * rowH - trPickScroll
-            val row = RectF(area.left, top, area.right, top + rowH)
+            val rowTop = top + i * rowH - trPickScroll
+            val row = RectF(area.left, rowTop, area.right, rowTop + rowH)
             val selected = code == current
-            if (selected || (panelTouchActive && panelTarget == TR_T_ROW + i)) {
+            if (selected || pressedTarget == TR_T_ROW + i) {
                 fillPaint.color = palette.keyPressed
                 canvas.drawRect(row, fillPaint)
             }
@@ -2924,12 +3016,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
         canvas.restore()
     }
 
-    private fun drawTranslateButton(canvas: Canvas, rect: RectF, label: String, enabled: Boolean, pressed: Boolean) {
-        drawPanelFace(canvas, rect, enabled && pressed)
-        val color = if (enabled) palette.text else (palette.text and 0x00FFFFFF) or (0x5A shl 24)
-        drawFittedLabel(canvas, rect, label, color)
-    }
-
     /** Teks di dalam [box] dengan paling banyak baris yang muat; diakhiri "…" bila terpotong. */
     private fun drawTextBlock(canvas: Canvas, text: String, box: RectF, sizeDp: Float, alpha: Int, center: Boolean) {
         if (text.isEmpty() || box.width() < 1f || box.height() < 1f) return
@@ -2949,15 +3035,16 @@ class ZekuKeyboardView(context: Context) : View(context) {
             .build()
         canvas.save()
         canvas.clipRect(box)
-        canvas.translate(box.left, box.top + if (center) max(0f, (box.height() - layout.height) / 2f) else 0f)
+        // Rata tengah vertikal agar satu baris tidak menempel ke atas kartu.
+        canvas.translate(box.left, box.top + max(0f, (box.height() - layout.height) / 2f))
         layout.draw(canvas)
         canvas.restore()
         clipTextPaint.alpha = 255
     }
 
+    /** Sasaran ketuk di titik ([x], [y]), atau -1. Tombol yang sedang tidak berlaku tidak dihitung. */
     private fun trTargetAt(x: Float, y: Float): Int {
-        val g = panelGeo()
-        val t = trGeo(g)
+        val t = trGeo()
         val pad = dp(3f)
         if (t.back.padded(pad).contains(x, y)) return TR_T_BACK
         if (t.swap.padded(pad).contains(x, y)) return TR_T_SWAP
@@ -2965,76 +3052,68 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (t.to.padded(pad).contains(x, y)) return TR_T_TO
         if (trPicking != 0) {
             // Daftar bahasa: nomor baris di titik sentuh.
-            if (y < g.gridTop || y > g.gridBottom) return -1
-            val index = ((y - g.gridTop + trPickScroll) / trRowHeight()).toInt()
+            if (y < topExtra || y > height - bottomPad) return -1
+            val index = ((y - topExtra + trPickScroll) / trRowHeight()).toInt()
             return if (index in TranslationHelper.languages().indices) TR_T_ROW + index else -1
         }
         return when {
-            trSourceText.isNotBlank() && trState != TR_BUSY && t.enter.padded(pad).contains(x, y) -> TR_T_ENTER
-            trState == TR_DONE && t.replace.contains(x, y) -> TR_T_REPLACE
-            trState == TR_DONE && t.insert.contains(x, y) -> TR_T_INSERT
+            trInput.isNotBlank() && trState != TR_BUSY && t.translate.padded(pad).contains(x, y) -> TR_T_ENTER
+            trState == TR_DONE && t.insert.padded(pad).contains(x, y) -> TR_T_INSERT
             trState == TR_MISSING && t.downloads.padded(pad).contains(x, y) -> TR_T_DOWNLOADS
             else -> -1
         }
     }
 
-    private fun handleTranslateTouch(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                panelTouchActive = true
-                panelDownY = event.y
-                panelLastY = event.y
-                panelScrolling = false
-                panelTarget = trTargetAt(event.x, event.y)
-                invalidate()
-            }
-            MotionEvent.ACTION_MOVE -> if (panelTouchActive) trMove(event.x, event.y)
-            MotionEvent.ACTION_UP -> {
-                if (panelTouchActive && !panelScrolling) {
-                    val target = panelTarget
-                    if (target >= 0 && trTargetAt(event.x, event.y) == target) {
-                        feedback(KeyType.CHARACTER)
-                        trAction(target)
-                    }
-                }
-                panelTouchActive = false
-                panelScrolling = false
-                panelTarget = -1
-                invalidate()
-            }
-            MotionEvent.ACTION_CANCEL -> {
-                panelScrolling = false
-                panelCancel()
-            }
-        }
-        return true
+    private fun trDown(id: Int, x: Float, y: Float) {
+        if (trPointer >= 0) return
+        trPointer = id
+        trDownY = y
+        trLastX = x
+        trLastY = y
+        trScrolling = false
+        trTarget = trTargetAt(x, y)
+        invalidate()
     }
 
     private fun trMove(x: Float, y: Float) {
-        val g = panelGeo()
-        if (trPicking != 0 && (panelScrolling || panelDownY >= g.gridTop)) {
+        trLastX = x
+        if (trPicking != 0 && (trScrolling || trDownY >= topExtra)) {
             // Menggulir daftar bahasa.
-            if (!panelScrolling && abs(y - panelDownY) > touchSlop) {
-                panelScrolling = true
-                panelTarget = -1
+            if (!trScrolling && abs(y - trDownY) > touchSlop) {
+                trScrolling = true
+                trTarget = -1
             }
-            if (panelScrolling) {
-                trPickScroll = (trPickScroll - (y - panelLastY)).coerceIn(0f, trPickScrollMax(g))
+            if (trScrolling) {
+                trPickScroll = (trPickScroll - (y - trLastY)).coerceIn(0f, trPickScrollMax())
                 invalidate()
             }
-            panelLastY = y
+            trLastY = y
             return
         }
-        if (trTargetAt(x, y) != panelTarget) {
+        trLastY = y
+        if (trTargetAt(x, y) != trTarget) {
             // Jari keluar dari tombol: batal.
-            panelTarget = -1
+            trTarget = -1
             invalidate()
         }
     }
 
+    private fun trUp() {
+        val target = trTarget
+        val scrolled = trScrolling
+        trPointer = -1
+        trTarget = -1
+        trScrolling = false
+        if (!scrolled && target >= 0 && trTargetAt(trLastX, trLastY) == target) {
+            feedback(KeyType.CHARACTER)
+            trAction(target)
+        }
+        invalidate()
+    }
+
     private fun trAction(target: Int) {
         when (target) {
-            // Kembali: menutup daftar bahasa dulu bila terbuka, baru menutup panel.
+            // Kembali: menutup daftar bahasa dulu bila terbuka, baru menutup mode Terjemahan.
             TR_T_BACK -> if (trPicking != 0) trPicking = 0 else closeTranslate()
             TR_T_SWAP -> {
                 trPicking = 0
@@ -3043,10 +3122,6 @@ class ZekuKeyboardView(context: Context) : View(context) {
             TR_T_FROM -> trTogglePicker(1)
             TR_T_TO -> trTogglePicker(2)
             TR_T_ENTER -> trRun()
-            TR_T_REPLACE -> {
-                listener?.onReplaceFieldText(trResult)
-                closeTranslate()
-            }
             TR_T_INSERT -> {
                 listener?.onInsertText(trResult)
                 closeTranslate()
@@ -3065,7 +3140,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         trPicking = side
         // Gulir supaya bahasa yang sedang dipilih terlihat, dan segarkan status unduhan.
         val index = TranslationHelper.languages().indexOf(if (side == 1) trFrom else trTo).coerceAtLeast(0)
-        trPickScroll = (index * trRowHeight() - trRowHeight() * 2).coerceIn(0f, trPickScrollMax(panelGeo()))
+        trPickScroll = (index * trRowHeight() - trRowHeight() * 2).coerceIn(0f, trPickScrollMax())
         TranslationHelper.downloadedModels { set ->
             trDownloaded = set
             if (trOpen) invalidate()
@@ -3089,7 +3164,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         trPicking = 0
         trRequestId++
         trResult = ""
-        trState = if (trSourceText.isBlank()) TR_EMPTY else TR_IDLE
+        trState = TR_IDLE
         invalidate()
     }
 
@@ -3102,12 +3177,12 @@ class ZekuKeyboardView(context: Context) : View(context) {
         prefs.translateTo = trTo
         trRequestId++
         trResult = ""
-        trState = if (trSourceText.isBlank()) TR_EMPTY else TR_IDLE
+        trState = TR_IDLE
         invalidate()
     }
 
     private fun trRun() {
-        val text = trSourceText.trim()
+        val text = trInput.toString().trim()
         if (text.isEmpty()) {
             trState = TR_EMPTY
             invalidate()
