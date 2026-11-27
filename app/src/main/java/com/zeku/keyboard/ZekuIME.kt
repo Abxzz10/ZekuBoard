@@ -222,12 +222,14 @@ class ZekuIME : InputMethodService(), ZekuKeyboardView.Listener {
      * Pindah kursor lewat tombol panah kiri/kanan. Kolom teks sendiri yang menjaga
      * batas awal dan akhir teks, jadi kursor tidak bisa keluar dari teks.
      */
-    override fun onCursorMove(steps: Int) {
+    override fun onCursorMove(steps: Int, extend: Boolean) {
         if (keyboardView?.translateActive == true) return
-        if (steps == 0 || currentInputConnection == null) return
+        val ic = currentInputConnection
+        if (steps == 0 || ic == null) return
         val key = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         repeat(abs(steps).coerceAtMost(MAX_STEPS_PER_MOVE)) {
-            sendDownUpKeyEvents(key)
+            // Memblok: tiap langkah ditekan bersama Shift, jadi titik awal tetap dan ujung ikut bergerak.
+            if (extend) sendNavKey(ic, key, true) else sendDownUpKeyEvents(key)
         }
         refreshAutoShift()
         refreshSuggestions()

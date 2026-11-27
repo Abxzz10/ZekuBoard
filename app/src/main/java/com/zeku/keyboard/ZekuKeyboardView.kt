@@ -103,8 +103,11 @@ class ZekuKeyboardView(context: Context) : View(context) {
         fun onKeyDelete()
         fun onKeyEnter()
 
-        /** Pindah kursor [steps] karakter (negatif = kiri, positif = kanan). */
-        fun onCursorMove(steps: Int)
+        /**
+         * Pindah kursor [steps] karakter (negatif = kiri, positif = kanan). Bila [extend] benar, blok teks
+         * diperluas dari titik awal sampai kursor (seperti menahan Shift sambil menekan panah).
+         */
+        fun onCursorMove(steps: Int, extend: Boolean)
 
         /** Mulai seleksi dari posisi kursor. Mengembalikan false bila tidak didukung. */
         fun onSelectBegin(): Boolean
@@ -309,6 +312,9 @@ class ZekuKeyboardView(context: Context) : View(context) {
     private var spaceStartX = 0f
     private var spaceApplied = 0
     private var spaceActive = false
+
+    // Shift + geser spasi: kursor memblok huruf dari titik awal sampai titik geser.
+    private var spaceExtend = false
 
     // Status gestur Shift + hapus (blok lalu hapus).
     private var selDeleteId = -1
@@ -3262,12 +3268,19 @@ class ZekuKeyboardView(context: Context) : View(context) {
         if (!spaceActive) {
             if (abs(dx) < dp(SPACE_ACTIVATE_DP)) return
             spaceActive = true
+            // Shift sedang ditahan jari lain, atau sudah diketuk sekali (bukan Caps Lock): gestur ini memblok.
+            // Shift sekali ketuk dipakai habis di sini, seperti setelah mengetik satu huruf.
+            spaceExtend = findHeldShiftId() != -1 || shiftState == ShiftState.ONCE
+            if (spaceExtend && shiftState == ShiftState.ONCE) {
+                shiftState = ShiftState.OFF
+                invalidate()
+            }
         }
         val steps = (dx / dp(SPACE_STEP_DP)).toInt()
         val delta = steps - spaceApplied
         if (delta != 0) {
             spaceApplied = steps
-            listener?.onCursorMove(delta)
+            listener?.onCursorMove(delta, spaceExtend)
         }
     }
 
@@ -3276,6 +3289,7 @@ class ZekuKeyboardView(context: Context) : View(context) {
         spaceStartX = 0f
         spaceApplied = 0
         spaceActive = false
+        spaceExtend = false
     }
 
     // ------------------------------------------------------ Gestur Shift + hapus
